@@ -11,7 +11,7 @@ export interface Project {
   canvasOriginY: number;
 }
 
-export type Tool = 'select' | 'text' | 'symbol' | 'border';
+export type Tool = 'select' | 'text' | 'symbol' | 'shape';
 
 export interface ProjectSlice {
   project: Project;
@@ -46,6 +46,8 @@ export interface UiSlice {
   theme: 'light' | 'dark';
   /** Symbol that will be placed on next canvas click with the symbol tool. */
   pendingSymbolName: string;
+  /** Shape kind placed on next canvas click with the shape tool. */
+  pendingShapeKind: import('../elements/types').ShapeKind;
   setSelection: (ids: string[]) => void;
   setActiveTool: (tool: Tool) => void;
   setZoom: (zoom: number) => void;
@@ -55,6 +57,7 @@ export interface UiSlice {
   setEditingTextId: (id: string | null) => void;
   setTheme: (theme: 'light' | 'dark') => void;
   setPendingSymbolName: (name: string) => void;
+  setPendingShapeKind: (kind: import('../elements/types').ShapeKind) => void;
 }
 
 export interface HistorySlice {

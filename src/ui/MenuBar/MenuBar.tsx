@@ -7,6 +7,7 @@ import styles from './MenuBar.module.css';
 
 interface MenuBarProps {
   onOpenExport: () => void;
+  onOpenPanelise: () => void;
   onOpenMachine: () => void;
   onOpenLabelSettings: () => void;
 }
@@ -18,7 +19,7 @@ interface MenuItem {
   divider?: boolean;
 }
 
-export function MenuBar({ onOpenExport, onOpenMachine, onOpenLabelSettings }: MenuBarProps) {
+export function MenuBar({ onOpenExport, onOpenPanelise, onOpenMachine, onOpenLabelSettings }: MenuBarProps) {
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const barRef = useRef<HTMLDivElement>(null);
 
@@ -57,7 +58,8 @@ export function MenuBar({ onOpenExport, onOpenMachine, onOpenLabelSettings }: Me
       { label: 'New project', onClick: () => s().newProject() },
       { label: 'Open…', shortcut: 'Ctrl+O', onClick: openProject },
       { label: 'Save as .elb', shortcut: 'Ctrl+S', onClick: () => saveProjectFile(s().project) },
-      { label: 'Export G-code…', shortcut: 'Ctrl+E', onClick: onOpenExport, divider: true },
+      { label: 'Export G-code…', shortcut: 'Ctrl+E', onClick: onOpenExport },
+      { label: 'Panelise & export…', shortcut: 'Ctrl+P', onClick: onOpenPanelise, divider: true },
     ],
     Edit: [
       { label: 'Undo', shortcut: 'Ctrl+Z', onClick: () => s().undo() },
@@ -66,7 +68,7 @@ export function MenuBar({ onOpenExport, onOpenMachine, onOpenLabelSettings }: Me
       {
         label: 'Select all',
         shortcut: 'Ctrl+A',
-        onClick: () => s().setSelection(s().project.label.elements.filter((e) => e.type !== 'border').map((e) => e.id)),
+        onClick: () => s().setSelection(s().project.label.elements.map((e) => e.id)),
       },
       { label: 'Delete selection', shortcut: 'Del', onClick: () => s().deleteElements(s().selectedIds) },
     ],
@@ -108,9 +110,12 @@ export function MenuBar({ onOpenExport, onOpenMachine, onOpenLabelSettings }: Me
       } else if (k === 'e') {
         e.preventDefault();
         onOpenExport();
+      } else if (k === 'p') {
+        e.preventDefault();
+        onOpenPanelise();
       } else if (k === 'a' && !(e.target as HTMLElement).matches('input,textarea')) {
         e.preventDefault();
-        s().setSelection(s().project.label.elements.filter((el) => el.type !== 'border').map((el) => el.id));
+        s().setSelection(s().project.label.elements.map((el) => el.id));
       }
     };
     window.addEventListener('keydown', onKey);

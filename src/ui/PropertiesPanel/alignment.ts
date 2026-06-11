@@ -5,9 +5,7 @@ export type AlignAction = 'left' | 'centreH' | 'right' | 'top' | 'centreV' | 'bo
 /** Align the current selection. With one element selected, aligns to the label. */
 export function alignSelection(action: AlignAction): void {
   const s = useStore.getState();
-  const els = s.project.label.elements.filter(
-    (el) => s.selectedIds.includes(el.id) && el.type !== 'border' && !el.locked,
-  );
+  const els = s.project.label.elements.filter((el) => s.selectedIds.includes(el.id) && !el.locked);
   if (els.length === 0) return;
   s.pushHistory();
 
@@ -48,9 +46,7 @@ export function alignSelection(action: AlignAction): void {
 /** Evenly distribute three or more selected elements along an axis. */
 export function distributeSelection(axis: 'h' | 'v'): void {
   const s = useStore.getState();
-  const els = s.project.label.elements.filter(
-    (el) => s.selectedIds.includes(el.id) && el.type !== 'border' && !el.locked,
-  );
+  const els = s.project.label.elements.filter((el) => s.selectedIds.includes(el.id) && !el.locked);
   if (els.length < 3) return;
   s.pushHistory();
 

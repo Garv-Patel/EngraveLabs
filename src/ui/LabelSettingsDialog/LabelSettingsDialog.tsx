@@ -7,14 +7,8 @@ export function LabelSettingsDialog({ onClose }: { onClose: () => void }) {
   const label = useStore((s) => s.project.label);
   const setLabelSize = useStore((s) => s.setLabelSize);
   const setLabelName = useStore((s) => s.setLabelName);
-  const updateElement = useStore((s) => s.updateElement);
 
-  const resize = (width: number, height: number) => {
-    setLabelSize(width, height);
-    // The border element tracks the label dimensions
-    const border = label.elements.find((el) => el.type === 'border');
-    if (border) updateElement(border.id, { width, height });
-  };
+  const resize = (width: number, height: number) => setLabelSize(width, height);
 
   return (
     <Modal title="Label settings" onClose={onClose}>

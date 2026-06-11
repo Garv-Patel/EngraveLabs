@@ -1,8 +1,8 @@
-import type { Element, Label } from '../elements/types';
+import type { Element, Label, ShapeElement } from '../elements/types';
 import type { MachineProfile } from '../machineProfiles/types';
 import { textElementStrokes } from '../elements/TextElement';
 import { symbolElementStrokes } from '../elements/SymbolElement';
-import { borderElementStrokes } from '../elements/BorderElement';
+import { shapeElementStrokes } from '../elements/ShapeElement';
 import type { Polyline } from '../fonts/strokeRenderer';
 import type { Vec2 } from '../utils/geometry';
 
@@ -26,22 +26,26 @@ export function labelToMachine(p: Vec2, label: Label, originX: number, originY: 
   return { x: originX + p.x, y: originY + (label.height - p.y) };
 }
 
-function elementDepth(el: Element, profile: MachineProfile): number {
-  if (el.type === 'border') {
-    // The border is the freeing cut: default depth is full material thickness.
+export function isCutShape(el: Element): el is ShapeElement {
+  return el.type === 'shape' && el.mode === 'cut';
+}
+
+export function elementDepth(el: Element, profile: MachineProfile): number {
+  if (isCutShape(el)) {
+    // Cut shapes free the part: default depth is full material thickness.
     return el.engraveDepth ?? profile.materialThickness;
   }
   return el.engraveDepth ?? profile.engraveDepth;
 }
 
-function elementStrokes(el: Element, label: Label, profile: MachineProfile): Polyline[] {
+export function elementStrokes(el: Element): Polyline[] {
   switch (el.type) {
     case 'text':
       return textElementStrokes(el);
     case 'symbol':
       return symbolElementStrokes(el);
-    case 'border':
-      return borderElementStrokes(el, label, profile.toolDiameter);
+    case 'shape':
+      return shapeElementStrokes(el);
   }
 }
 
@@ -51,30 +55,34 @@ function describeElement(el: Element): string {
       return `text "${el.text.split('\n')[0].slice(0, 30)}"`;
     case 'symbol':
       return `symbol ${el.symbolName}`;
-    case 'border':
-      return 'border (final cut)';
+    case 'shape':
+      return el.mode === 'cut' ? `cut ${el.shapeKind}` : `shape ${el.shapeKind}`;
   }
 }
 
 /**
- * Build the full job toolpath with engraving-first ordering strictly enforced:
- * text → symbols → any other non-border elements → border LAST.
- * This ordering is not configurable: the border cut frees the label from the
- * stock sheet, so it must never run before engraving.
+ * Machining order, strictly enforced: text → symbols → engrave shapes →
+ * cut shapes LAST (smallest area first, so inner cutouts are released before
+ * the outermost outline frees the whole part from the stock sheet).
+ * Not user-configurable: cutting first would make in-place engraving impossible.
  */
+export function orderElements(elements: Element[]): Element[] {
+  const texts = elements.filter((e) => e.type === 'text');
+  const symbols = elements.filter((e) => e.type === 'symbol');
+  const engraveShapes = elements.filter((e) => e.type === 'shape' && e.mode === 'engrave');
+  const cutShapes = elements
+    .filter(isCutShape)
+    .sort((a, b) => a.width * a.height - b.width * b.height);
+  return [...texts, ...symbols, ...engraveShapes, ...cutShapes];
+}
+
+/** Build the full job toolpath with engraving-first ordering. */
 export function buildToolpath(opts: ToolpathOptions): PathOp[] {
   const { label, profile, originX, originY } = opts;
-  const texts = label.elements.filter((e) => e.type === 'text');
-  const symbols = label.elements.filter((e) => e.type === 'symbol');
-  const others = label.elements.filter((e) => e.type !== 'text' && e.type !== 'symbol' && e.type !== 'border');
-  const borders = label.elements.filter((e) => e.type === 'border');
-  const ordered: Element[] = [...texts, ...symbols, ...others, ...borders];
-
   const ops: PathOp[] = [];
-  for (const el of ordered) {
+  for (const el of orderElements(label.elements)) {
     const depth = elementDepth(el, profile);
-    const strokes = elementStrokes(el, label, profile);
-    strokes.forEach((stroke, i) => {
+    elementStrokes(el).forEach((stroke, i) => {
       if (stroke.length < 2) return;
       ops.push({
         points: stroke.map((p) => labelToMachine(p, label, originX, originY)),

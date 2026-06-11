@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { useStore, selectActiveProfile } from '../store';
-import type { TextElement, SymbolElement, BorderElement } from '../elements/types';
+import type { TextElement, SymbolElement, ShapeElement } from '../elements/types';
 import { useCanvasLoop } from './useCanvasLoop';
 import { render, RULER_SIZE_PX, type RenderState } from './renderer';
 import { elementAtPoint, elementBBox, elementsInRect, resizeBBox, rotationFromPointer } from './interaction';
@@ -137,27 +137,25 @@ export function CanvasView() {
         s.setActiveTool('select');
         return;
       }
-      if (s.activeTool === 'border') {
-        const existing = s.project.label.elements.find((el) => el.type === 'border');
-        if (existing) {
-          s.setSelection([existing.id]);
-        } else {
-          const el: BorderElement = {
-            type: 'border',
-            id: crypto.randomUUID(),
-            x: 0,
-            y: 0,
-            width: s.project.label.width,
-            height: s.project.label.height,
-            rotation: 0,
-            locked: false,
-            lineThickness: 0.2,
-            cornerRadius: 2,
-            engraveDepth: null,
-          };
-          s.addElement(el);
-          s.setSelection([el.id]);
-        }
+      if (s.activeTool === 'shape') {
+        const size = 20;
+        const el: ShapeElement = {
+          type: 'shape',
+          id: crypto.randomUUID(),
+          shapeKind: s.pendingShapeKind,
+          mode: 'engrave',
+          x: world.x - size / 2,
+          y: world.y - size / 2,
+          width: size,
+          height: size,
+          rotation: 0,
+          locked: false,
+          cornerRadius: 0,
+          passCount: 1,
+          engraveDepth: null,
+        };
+        s.addElement(el);
+        s.setSelection([el.id]);
         s.setActiveTool('select');
         return;
       }
@@ -165,7 +163,7 @@ export function CanvasView() {
       // Select tool: handles first (single selection only)
       if (s.selectedIds.length === 1) {
         const el = s.project.label.elements.find((x) => x.id === s.selectedIds[0]);
-        if (el && el.type !== 'border' && !el.locked) {
+        if (el && !el.locked) {
           const toScreen = (p: Vec2): Vec2 => ({ x: s.panX + mmToPx(p.x, s.zoom), y: s.panY + mmToPx(p.y, s.zoom) });
           const handle = hitTestHandles(screen, handlePositions(elementBBox(el), el.rotation, toScreen));
           if (handle === 'rot') {
@@ -200,9 +198,7 @@ export function CanvasView() {
           ids = s.selectedIds.includes(hit.id) ? s.selectedIds : [hit.id];
         }
         s.setSelection(ids);
-        const movable = s.project.label.elements.filter(
-          (el) => ids.includes(el.id) && !el.locked && el.type !== 'border',
-        );
+        const movable = s.project.label.elements.filter((el) => ids.includes(el.id) && !el.locked);
         if (movable.length > 0 && !e.shiftKey) {
           s.pushHistory();
           drag.current = {
@@ -234,10 +230,10 @@ export function CanvasView() {
       // Cursor feedback when idle
       if (d.mode === 'none') {
         let cursor = spaceDown.current ? 'grab' : 'default';
-        if (s.activeTool === 'text' || s.activeTool === 'symbol') cursor = 'crosshair';
+        if (s.activeTool === 'text' || s.activeTool === 'symbol' || s.activeTool === 'shape') cursor = 'crosshair';
         else if (s.selectedIds.length === 1) {
           const el = s.project.label.elements.find((x) => x.id === s.selectedIds[0]);
-          if (el && el.type !== 'border' && !el.locked) {
+          if (el && !el.locked) {
             const toScreen = (p: Vec2): Vec2 => ({ x: s.panX + mmToPx(p.x, s.zoom), y: s.panY + mmToPx(p.y, s.zoom) });
             const handle = hitTestHandles(screen, handlePositions(elementBBox(el), el.rotation, toScreen));
             if (handle) cursor = cursorForHandle(handle);
@@ -275,7 +271,7 @@ export function CanvasView() {
             height: primary.height,
           };
           const others = s.project.label.elements
-            .filter((el) => !d.ids.includes(el.id) && el.type !== 'border')
+            .filter((el) => !d.ids.includes(el.id))
             .map(elementBBox);
           others.push({ x: 0, y: 0, width: s.project.label.width, height: s.project.label.height });
           const snap = computeAlignmentSnap(draggedBBox, others, pxToMm(3, s.zoom));
@@ -338,9 +334,7 @@ export function CanvasView() {
           width: Math.abs(world.x - d.startMm.x),
           height: Math.abs(world.y - d.startMm.y),
         };
-        const inside = elementsInRect(marquee.current, s.project.label.elements).filter(
-          (el) => el.type !== 'border',
-        );
+        const inside = elementsInRect(marquee.current, s.project.label.elements);
         s.setSelection(inside.map((el) => el.id));
       }
     },
@@ -452,7 +446,9 @@ export function CanvasView() {
           break;
         case 'b':
         case 'B':
-          s.setActiveTool('border');
+        case 'r':
+        case 'R':
+          s.setActiveTool('shape');
           break;
       }
     };
@@ -477,7 +473,7 @@ export function CanvasView() {
       const outOfBoundsIds = new Set<string>();
       const labelBox: BBox = { x: 0, y: 0, width: label.width, height: label.height };
       for (const el of label.elements) {
-        if (el.type !== 'border' && !bboxContains(labelBox, elementBBox(el))) outOfBoundsIds.add(el.id);
+        if (!bboxContains(labelBox, elementBBox(el))) outOfBoundsIds.add(el.id);
       }
       const state: RenderState = {
         width,

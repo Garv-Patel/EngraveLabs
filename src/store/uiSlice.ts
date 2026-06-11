@@ -17,6 +17,7 @@ export const createUiSlice: StateCreator<AppState, [], [], UiSlice> = (set) => (
   editingTextId: null,
   theme: 'light',
   pendingSymbolName: DEFAULT_SYMBOL_NAME,
+  pendingShapeKind: 'rectangle',
 
   setSelection: (ids) => set({ selectedIds: ids }),
   setActiveTool: (tool) => set({ activeTool: tool }),
@@ -27,4 +28,5 @@ export const createUiSlice: StateCreator<AppState, [], [], UiSlice> = (set) => (
   setEditingTextId: (id) => set({ editingTextId: id }),
   setTheme: (theme) => set({ theme }),
   setPendingSymbolName: (name) => set({ pendingSymbolName: name }),
+  setPendingShapeKind: (kind) => set({ pendingShapeKind: kind }),
 });

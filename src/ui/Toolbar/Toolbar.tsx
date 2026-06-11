@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useStore, type Tool } from '../../store';
 import { listSymbols } from '../../symbols/symbolRegistry';
+import type { ShapeKind } from '../../elements/types';
 import { pluginToolbarItems } from '../../plugins/loader';
 import styles from './Toolbar.module.css';
 
@@ -8,7 +9,15 @@ const TOOLS: { tool: Tool; label: string; icon: string; shortcut: string }[] = [
   { tool: 'select', label: 'Select', icon: '⮕', shortcut: 'V' },
   { tool: 'text', label: 'Text', icon: 'T', shortcut: 'T' },
   { tool: 'symbol', label: 'Symbol', icon: '⚠', shortcut: 'S' },
-  { tool: 'border', label: 'Border', icon: '▣', shortcut: 'B' },
+  { tool: 'shape', label: 'Shape', icon: '▣', shortcut: 'R' },
+];
+
+const SHAPES: { kind: ShapeKind; label: string }[] = [
+  { kind: 'rectangle', label: '▭ Rectangle' },
+  { kind: 'circle', label: '◯ Circle' },
+  { kind: 'triangle', label: '△ Triangle' },
+  { kind: 'line', label: '╱ Line' },
+  { kind: 'flash', label: '⚡ Flash' },
 ];
 
 export function Toolbar() {
@@ -18,11 +27,15 @@ export function Toolbar() {
   const setGridEnabled = useStore((s) => s.setGridEnabled);
   const pendingSymbolName = useStore((s) => s.pendingSymbolName);
   const setPendingSymbolName = useStore((s) => s.setPendingSymbolName);
+  const pendingShapeKind = useStore((s) => s.pendingShapeKind);
+  const setPendingShapeKind = useStore((s) => s.setPendingShapeKind);
   const [symbolPickerOpen, setSymbolPickerOpen] = useState(false);
+  const [shapePickerOpen, setShapePickerOpen] = useState(false);
 
   const onToolClick = (tool: Tool) => {
     setActiveTool(tool);
     setSymbolPickerOpen(tool === 'symbol' ? !symbolPickerOpen : false);
+    setShapePickerOpen(tool === 'shape' ? !shapePickerOpen : false);
   };
 
   return (
@@ -71,6 +84,24 @@ export function Toolbar() {
               }}
             >
               {sym.displayName}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {shapePickerOpen && activeTool === 'shape' && (
+        <div className={styles.symbolPicker}>
+          <div className={styles.symbolPickerTitle}>Click canvas to place:</div>
+          {SHAPES.map(({ kind, label }) => (
+            <button
+              key={kind}
+              className={`${styles.symbolItem} ${pendingShapeKind === kind ? styles.active : ''}`}
+              onClick={() => {
+                setPendingShapeKind(kind);
+                setShapePickerOpen(false);
+              }}
+            >
+              {label}
             </button>
           ))}
         </div>

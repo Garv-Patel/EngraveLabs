@@ -1,5 +1,5 @@
 import { useStore } from '../../store';
-import type { Element, TextElement, SymbolElement, BorderElement } from '../../elements/types';
+import type { Element, TextElement, SymbolElement, ShapeElement, ShapeKind } from '../../elements/types';
 import { listFonts } from '../../fonts/fontRegistry';
 import { listSymbols } from '../../symbols/symbolRegistry';
 import { NumberField } from '../common/NumberField';
@@ -31,14 +31,13 @@ function SingleElementProps({ el }: { el: Element }) {
       return <TextProps el={el} />;
     case 'symbol':
       return <SymbolProps el={el} />;
-    case 'border':
-      return <BorderProps el={el} />;
+    case 'shape':
+      return <ShapeProps el={el} />;
   }
 }
 
 function CommonPosition({ el }: { el: Element }) {
   const update = useUpdate();
-  if (el.type === 'border') return null;
   return (
     <>
       <div className={styles.row}>
@@ -177,28 +176,76 @@ function SymbolProps({ el }: { el: SymbolElement }) {
   );
 }
 
-function BorderProps({ el }: { el: BorderElement }) {
+const SHAPE_KINDS: { kind: ShapeKind; label: string }[] = [
+  { kind: 'rectangle', label: 'Rectangle' },
+  { kind: 'circle', label: 'Circle' },
+  { kind: 'triangle', label: 'Triangle' },
+  { kind: 'line', label: 'Line' },
+  { kind: 'flash', label: 'Flash' },
+];
+
+function ShapeProps({ el }: { el: ShapeElement }) {
   const update = useUpdate();
-  const deleteElements = useStore((s) => s.deleteElements);
   return (
     <div>
-      <div className={styles.note}>The border is always cut last, after all engraving.</div>
-      <NumberField
-        label="Line thickness"
-        value={el.lineThickness}
-        min={0.05}
-        onChange={(v) => update(el.id, { lineThickness: v })}
-      />
-      <NumberField
-        label="Corner radius"
-        value={el.cornerRadius}
-        min={0}
-        onChange={(v) => update(el.id, { cornerRadius: v })}
-      />
+      <label className={styles.field}>
+        <span className={styles.fieldLabel}>Shape</span>
+        <select
+          value={el.shapeKind}
+          onChange={(e) => update(el.id, { shapeKind: e.target.value as ShapeKind })}
+        >
+          {SHAPE_KINDS.map(({ kind, label }) => (
+            <option key={kind} value={kind}>
+              {label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <div className={styles.field}>
+        <span className={styles.fieldLabel}>Mode</span>
+        <div className={styles.btnRow}>
+          <button
+            className={`${styles.segBtn} ${el.mode === 'engrave' ? styles.active : ''}`}
+            onClick={() => update(el.id, { mode: 'engrave' })}
+          >
+            Engrave
+          </button>
+          <button
+            className={`${styles.segBtn} ${el.mode === 'cut' ? styles.active : ''}`}
+            onClick={() => update(el.id, { mode: 'cut' })}
+          >
+            Cut through
+          </button>
+        </div>
+      </div>
+      {el.mode === 'cut' && (
+        <div className={styles.note}>Cut shapes always run last (innermost first) at material thickness.</div>
+      )}
+      <div className={styles.row}>
+        <NumberField label="Width" value={el.width} min={0.5} onChange={(v) => update(el.id, { width: v })} />
+        <NumberField label="Height" value={el.height} min={0.5} onChange={(v) => update(el.id, { height: v })} />
+      </div>
+      {el.shapeKind === 'rectangle' && (
+        <NumberField
+          label="Corner radius"
+          value={el.cornerRadius}
+          min={0}
+          onChange={(v) => update(el.id, { cornerRadius: v })}
+        />
+      )}
+      {el.mode === 'engrave' && (
+        <NumberField
+          label="Passes"
+          raw
+          value={el.passCount}
+          min={1}
+          max={10}
+          step={1}
+          onChange={(v) => update(el.id, { passCount: Math.round(v) })}
+        />
+      )}
       <DepthField el={el} />
-      <button className={styles.dangerBtn} onClick={() => deleteElements([el.id])}>
-        Remove border
-      </button>
+      <CommonPosition el={el} />
     </div>
   );
 }
@@ -215,7 +262,9 @@ const ALIGN_ACTIONS: { action: AlignAction; label: string }[] = [
 function MultiElementProps({ els }: { els: Element[] }) {
   const update = useUpdate();
   const sharedDepth = els.every((e) => e.engraveDepth === els[0].engraveDepth);
-  const withPass = els.filter((e): e is TextElement | SymbolElement => e.type !== 'border');
+  const withPass = els.filter(
+    (e): e is TextElement | SymbolElement | ShapeElement => e.type !== 'shape' || e.mode === 'engrave',
+  );
   const sharedPass = withPass.length > 0 && withPass.every((e) => e.passCount === withPass[0].passCount);
 
   return (

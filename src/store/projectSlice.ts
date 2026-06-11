@@ -1,13 +1,32 @@
 import type { StateCreator } from 'zustand';
 import type { AppState, Project, ProjectSlice } from './types';
-import type { Element, TextElement } from '../elements/types';
+import type { Element, ShapeElement, TextElement } from '../elements/types';
 import { measureTextElement } from '../elements/TextElement';
-import { DEFAULT_PROFILE_ID, getProfile } from '../machineProfiles/profileRegistry';
+import { migrateLabel } from '../elements/migrate';
+import { DEFAULT_PROFILE_ID } from '../machineProfiles/profileRegistry';
 
 export const PROJECT_SCHEMA_VERSION = '1';
 
+/** The default outline: a cut rectangle matching the label, resizable like any shape. */
+export function defaultOutlineShape(width: number, height: number): ShapeElement {
+  return {
+    id: crypto.randomUUID(),
+    type: 'shape',
+    shapeKind: 'rectangle',
+    mode: 'cut',
+    x: 0,
+    y: 0,
+    width,
+    height,
+    rotation: 0,
+    locked: false,
+    cornerRadius: 0,
+    passCount: 1,
+    engraveDepth: null,
+  };
+}
+
 export function createDefaultProject(): Project {
-  const profile = getProfile(DEFAULT_PROFILE_ID);
   return {
     version: PROJECT_SCHEMA_VERSION,
     units: 'mm',
@@ -17,11 +36,12 @@ export function createDefaultProject(): Project {
       name: 'Untitled label',
       width: 100,
       height: 50,
-      elements: [],
+      elements: [defaultOutlineShape(100, 50)],
       backgroundColor: '#f5e9c8',
     },
-    canvasOriginX: profile ? Math.max(0, (profile.workAreaX - 100) / 2) : 0,
-    canvasOriginY: profile ? Math.max(0, (profile.workAreaY - 50) / 2) : 0,
+    // Label sits at the machine origin so G-code coordinates start near zero.
+    canvasOriginX: 0,
+    canvasOriginY: 0,
   };
 }
 
@@ -43,7 +63,8 @@ export const createProjectSlice: StateCreator<AppState, [], [], ProjectSlice> = 
   },
 
   loadProject: (project) => {
-    set({ project, selectedIds: [], past: [], future: [], editingTextId: null });
+    const migrated = { ...project, label: migrateLabel(project.label) };
+    set({ project: migrated, selectedIds: [], past: [], future: [], editingTextId: null });
   },
 
   setUnits: (units) => set((s) => ({ project: { ...s.project, units } })),
@@ -103,7 +124,7 @@ export const createProjectSlice: StateCreator<AppState, [], [], ProjectSlice> = 
   },
 
   duplicateElements: (ids) => {
-    const els = get().project.label.elements.filter((el) => ids.includes(el.id) && el.type !== 'border');
+    const els = get().project.label.elements.filter((el) => ids.includes(el.id));
     if (els.length === 0) return [];
     get().pushHistory();
     const copies = els.map((el) => ({ ...el, id: crypto.randomUUID(), x: el.x + 2, y: el.y + 2 }));

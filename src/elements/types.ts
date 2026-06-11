@@ -27,15 +27,23 @@ export interface SymbolElement extends BaseElement {
   engraveDepth: number | null;
 }
 
-export interface BorderElement extends BaseElement {
-  type: 'border';
-  lineThickness: number; // mm — rendered as inset parallel passes
-  cornerRadius: number; // mm — 0 = sharp corners
-  engraveDepth: number | null;
-  // cut order is always LAST; enforced by the generator, not a user setting
+export type ShapeKind = 'rectangle' | 'circle' | 'triangle' | 'line' | 'flash';
+
+export interface ShapeElement extends BaseElement {
+  type: 'shape';
+  shapeKind: ShapeKind;
+  /**
+   * 'engrave' = surface marking at engrave depth.
+   * 'cut' = through-cut at material thickness; always machined last
+   * (innermost first), so custom label outlines free the part at the end.
+   */
+  mode: 'engrave' | 'cut';
+  cornerRadius: number; // mm — rectangles only
+  passCount: number; // engrave mode: parallel offset passes
+  engraveDepth: number | null; // null = machine default (cut: material thickness)
 }
 
-export type Element = TextElement | SymbolElement | BorderElement;
+export type Element = TextElement | SymbolElement | ShapeElement;
 
 export interface Label {
   id: string;

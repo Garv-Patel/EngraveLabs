@@ -46,7 +46,7 @@ export function generateGcode(opts: GenerateOptions): GenerateResult {
   lines.push(c(`EngraveLab - ${ctx.projectName}`));
   lines.push(c(`Label: ${label.width} x ${label.height} mm at origin X${fmt(originX)} Y${fmt(originY)}`));
   lines.push(c(`Machine: ${profile.name} (${dialect.name})`));
-  lines.push(c('Engraving-first order: text, symbols, then border cut last'));
+  lines.push(c('Engraving-first order: text, symbols, engrave shapes, then cut shapes last'));
   lines.push(...dialect.header(ctx));
 
   // 2. Spindle on, safe Z, feed rate
@@ -94,9 +94,13 @@ export function validateJob(opts: GenerateOptions): ValidationIssue[] {
   }
 
   for (const el of label.elements) {
-    if (el.type === 'border') continue;
     if (el.x < 0 || el.y < 0 || el.x + el.width > label.width || el.y + el.height > label.height) {
-      const name = el.type === 'text' ? `Text "${el.text.split('\n')[0]}"` : `Symbol ${el.symbolName}`;
+      const name =
+        el.type === 'text'
+          ? `Text "${el.text.split('\n')[0]}"`
+          : el.type === 'symbol'
+            ? `Symbol ${el.symbolName}`
+            : `Shape ${el.shapeKind}`;
       issues.push({ level: 'warning', message: `${name} extends outside the label boundary.` });
     }
   }

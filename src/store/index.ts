@@ -7,6 +7,7 @@ import { createUiSlice } from './uiSlice';
 import { createHistorySlice } from './historySlice';
 import { getProfile, getBuiltinProfiles } from '../machineProfiles/profileRegistry';
 import type { MachineProfile } from '../machineProfiles/types';
+import { migrateLabel } from '../elements/migrate';
 
 export const useStore = create<AppState>()(
   persist(
@@ -18,12 +19,20 @@ export const useStore = create<AppState>()(
     }),
     {
       name: 'engravelab.project',
+      version: 2,
       partialize: (s) => ({
         project: s.project,
         gridEnabled: s.gridEnabled,
         gridSpacing: s.gridSpacing,
         theme: s.theme,
       }),
+      migrate: (persisted) => {
+        const state = persisted as Partial<AppState>;
+        if (state.project) {
+          state.project = { ...state.project, label: migrateLabel(state.project.label) };
+        }
+        return state as AppState;
+      },
     },
   ),
 );

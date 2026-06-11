@@ -1,12 +1,9 @@
-import type { Element, Label } from '../elements/types';
+import type { Label } from '../elements/types';
 import type { MachineProfile } from '../machineProfiles/types';
 import type { BBox, Vec2 } from '../utils/geometry';
 import { bboxCentre, degToRad } from '../utils/geometry';
 import { mmToPx } from '../utils/units';
-import { textElementStrokes } from '../elements/TextElement';
-import { symbolElementStrokes } from '../elements/SymbolElement';
-import { borderElementStrokes } from '../elements/BorderElement';
-import type { Polyline } from '../fonts/strokeRenderer';
+import { elementStrokes, isCutShape } from '../gcode/toolpath';
 import { handlePositions, HANDLE_SIZE_PX } from './handles';
 import { elementBBox } from './interaction';
 import type { AlignmentGuide } from './snapping';
@@ -42,6 +39,7 @@ interface Theme {
   grid: string;
   gridMajor: string;
   stroke: string;
+  cut: string;
   selection: string;
   handleFill: string;
   guide: string;
@@ -58,6 +56,7 @@ const LIGHT: Theme = {
   grid: 'rgba(0,0,0,0.06)',
   gridMajor: 'rgba(0,0,0,0.14)',
   stroke: '#1a1a1a',
+  cut: '#c43c3c',
   selection: '#4f7cff',
   handleFill: '#ffffff',
   guide: '#e0529c',
@@ -74,6 +73,7 @@ const DARK: Theme = {
   grid: 'rgba(255,255,255,0.06)',
   gridMajor: 'rgba(255,255,255,0.14)',
   stroke: '#e8e8e8',
+  cut: '#ff6b6b',
   selection: '#6f93ff',
   handleFill: '#2a2a32',
   guide: '#e0529c',
@@ -81,17 +81,6 @@ const DARK: Theme = {
   ruler: '#26262e',
   rulerText: '#999',
 };
-
-function elementPreviewStrokes(el: Element, label: Label, profile: MachineProfile): Polyline[] {
-  switch (el.type) {
-    case 'text':
-      return textElementStrokes(el);
-    case 'symbol':
-      return symbolElementStrokes(el);
-    case 'border':
-      return borderElementStrokes(el, label, profile.toolDiameter);
-  }
-}
 
 export function render(ctx: CanvasRenderingContext2D, s: RenderState): void {
   const t = s.dark ? DARK : LIGHT;
@@ -153,14 +142,14 @@ export function render(ctx: CanvasRenderingContext2D, s: RenderState): void {
     ctx.restore();
   }
 
-  // 5. Elements
+  // 5. Elements (cut-mode shapes drawn in red to distinguish from engraving)
   for (const el of s.label.elements) {
     if (el.type === 'text' && el.id === s.editingTextId) continue; // textarea overlay replaces it
-    ctx.strokeStyle = t.stroke;
+    ctx.strokeStyle = isCutShape(el) ? t.cut : t.stroke;
     ctx.lineWidth = Math.max(1, mmToPx(0.2, s.zoom));
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-    for (const stroke of elementPreviewStrokes(el, s.label, s.profile)) {
+    for (const stroke of elementStrokes(el)) {
       if (stroke.length < 2) continue;
       ctx.beginPath();
       const p0 = toScreen(stroke[0]);
@@ -182,7 +171,7 @@ export function render(ctx: CanvasRenderingContext2D, s: RenderState): void {
     if (!s.selectedIds.includes(el.id)) continue;
     const bbox = elementBBox(el);
     drawRotatedBox(ctx, bbox, el.rotation, toScreen, t.selection, []);
-    if (s.selectedIds.length === 1 && el.type !== 'border' && !el.locked) {
+    if (s.selectedIds.length === 1 && !el.locked) {
       const handles = handlePositions(bbox, el.rotation, toScreen);
       for (const h of handles) {
         ctx.fillStyle = t.handleFill;
