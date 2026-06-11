@@ -1,0 +1,121 @@
+.panel {
+  width: 230px;
+  background: var(--panel-bg);
+  border-left: 1px solid var(--border);
+  padding: 10px 12px;
+  overflow-y: auto;
+  font-size: 12px;
+}
+
+.title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+  margin-bottom: 10px;
+}
+
+.empty {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.note {
+  color: var(--text-dim);
+  font-size: 11px;
+  margin-bottom: 8px;
+}
+
+.row {
+  display: flex;
+  gap: 8px;
+}
+
+.row > * {
+  flex: 1;
+  min-width: 0;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-bottom: 8px;
+}
+
+.fieldLabel {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.field textarea,
+.field select {
+  background: var(--input-bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 5px 7px;
+  font-size: 12px;
+  font-family: inherit;
+  resize: vertical;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.btnRow {
+  display: flex;
+  gap: 4px;
+}
+
+.alignGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.segBtn {
+  flex: 1;
+  padding: 4px 6px;
+  font-size: 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--input-bg);
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.segBtn:hover {
+  background: var(--hover-bg);
+}
+
+.segBtn.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.dangerBtn {
+  width: 100%;
+  margin-top: 8px;
+  padding: 6px;
+  border: 1px solid #c43c3c;
+  border-radius: 4px;
+  background: none;
+  color: #c43c3c;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.dangerBtn:hover {
+  background: rgba(196, 60, 60, 0.1);
+}

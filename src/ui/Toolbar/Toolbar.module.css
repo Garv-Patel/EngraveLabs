@@ -1,0 +1,80 @@
+.toolbar {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 6px;
+  background: var(--panel-bg);
+  border-right: 1px solid var(--border);
+}
+
+.toolBtn {
+  width: 36px;
+  height: 36px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.toolBtn:hover {
+  background: var(--hover-bg);
+}
+
+.toolBtn.active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.divider {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 2px;
+}
+
+.symbolPicker {
+  position: absolute;
+  left: 52px;
+  top: 96px;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  padding: 8px;
+  z-index: 50;
+  width: 160px;
+}
+
+.symbolPickerTitle {
+  font-size: 10px;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+}
+
+.symbolItem {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: none;
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.symbolItem:hover {
+  background: var(--hover-bg);
+}
+
+.symbolItem.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}

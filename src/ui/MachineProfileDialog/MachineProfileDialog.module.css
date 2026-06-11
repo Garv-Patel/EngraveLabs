@@ -1,0 +1,113 @@
+.layout {
+  display: flex;
+  gap: 14px;
+}
+
+.list {
+  width: 180px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.listItem {
+  text-align: left;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--input-bg);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.listItem em {
+  display: block;
+  font-size: 9px;
+  font-style: normal;
+  color: var(--text-dim);
+}
+
+.listItem.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.listActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.listActions button {
+  flex: 1;
+  font-size: 10px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: none;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.form {
+  flex: 1;
+  min-width: 0;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 10px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 7px;
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+.field input,
+.field select {
+  background: var(--input-bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 6px;
+  font-size: 12px;
+}
+
+.field input:disabled,
+.field select:disabled {
+  opacity: 0.55;
+}
+
+.footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.primaryBtn {
+  padding: 6px 14px;
+  border: none;
+  border-radius: 4px;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+}
+
+.secondaryBtn {
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: none;
+  color: var(--text);
+  cursor: pointer;
+}

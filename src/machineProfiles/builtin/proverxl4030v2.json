@@ -1,0 +1,22 @@
+{
+  "id": "proverxl-4030-v2",
+  "name": "PROVerXL 4030 V2",
+  "gcodeDialect": "grbl",
+  "workAreaX": 400,
+  "workAreaY": 300,
+  "defaultFeedrate": 800,
+  "defaultPlungeRate": 200,
+  "spindleSpeed": 10000,
+  "safeZ": 5.0,
+  "engraveDepth": 0.3,
+  "materialThickness": 1.5,
+  "topLayerDepth": 0.3,
+  "toolDiameter": 0.2,
+  "homeX": 0,
+  "homeY": 0,
+  "spindleOnCmd": "M3",
+  "spindleOffCmd": "M5",
+  "programEndCmd": "M30",
+  "coordMode": "absolute",
+  "gcodeExtension": "nc"
+}
