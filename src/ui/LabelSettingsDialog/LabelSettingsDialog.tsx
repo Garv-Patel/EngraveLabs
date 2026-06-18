@@ -1,14 +1,12 @@
 import { useStore } from '../../store';
 import { Modal } from '../common/Modal';
-import { NumberField } from '../common/NumberField';
+import { formatDisplay } from '../../utils/units';
 import styles from './LabelSettingsDialog.module.css';
 
 export function LabelSettingsDialog({ onClose }: { onClose: () => void }) {
   const label = useStore((s) => s.project.label);
-  const setLabelSize = useStore((s) => s.setLabelSize);
+  const units = useStore((s) => s.project.units);
   const setLabelName = useStore((s) => s.setLabelName);
-
-  const resize = (width: number, height: number) => setLabelSize(width, height);
 
   return (
     <Modal title="Label settings" onClose={onClose}>
@@ -16,9 +14,9 @@ export function LabelSettingsDialog({ onClose }: { onClose: () => void }) {
         <span>Label name</span>
         <input type="text" value={label.name} onChange={(e) => setLabelName(e.target.value)} />
       </label>
-      <div className={styles.row}>
-        <NumberField label="Width" value={label.width} min={5} onChange={(v) => resize(v, label.height)} />
-        <NumberField label="Height" value={label.height} min={5} onChange={(v) => resize(label.width, v)} />
+      <div className={styles.note}>
+        The label size follows the outermost cut shape — {formatDisplay(label.width, units)} ×{' '}
+        {formatDisplay(label.height, units)}. Resize the outline on the canvas to change the part size.
       </div>
       <label className={styles.field}>
         <span>Preview colour</span>

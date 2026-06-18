@@ -1,5 +1,22 @@
 export type GcodeDialectId = 'grbl' | 'mach3' | 'linuxcnc';
 
+/**
+ * A physical cutter. Engraved line width comes from the bit, not from faking
+ * thickness with parallel passes — so the pattern matches what the machine
+ * actually cuts. To make text or a shape heavier, pick a wider bit.
+ */
+export type BitType = 'engrave' | 'vbit' | 'flat' | 'ball';
+
+export interface Bit {
+  id: string;
+  name: string;
+  type: BitType;
+  /** mm — marking/cutting width at the surface (tip width for V-bits). */
+  diameter: number;
+  /** Included angle in degrees — V-bits only. */
+  angle?: number;
+}
+
 export interface MachineProfile {
   id: string;
   name: string;
@@ -21,4 +38,7 @@ export interface MachineProfile {
   programEndCmd: string; // e.g. "M30"
   coordMode: 'absolute' | 'incremental';
   gcodeExtension: string; // e.g. "nc", "gcode", "tap"
+  /** Tool library. Elements reference a bit by id; null = defaultBitId. */
+  bits?: Bit[];
+  defaultBitId?: string;
 }

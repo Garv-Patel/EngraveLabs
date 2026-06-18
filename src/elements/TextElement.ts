@@ -1,6 +1,6 @@
 import type { TextElement } from './types';
 import { getFont } from '../fonts/fontRegistry';
-import { layoutText, expandMultiPass, type Polyline } from '../fonts/strokeRenderer';
+import { layoutText, type Polyline } from '../fonts/strokeRenderer';
 import { rotateAround, type Vec2 } from '../utils/geometry';
 
 /** Natural (unrotated) rendered size of a text element in mm. */
@@ -16,8 +16,8 @@ export function measureTextElement(el: Pick<TextElement, 'text' | 'fontName' | '
 
 /**
  * Strokes for a text element in label space (mm, y-down from label top-left),
- * with rotation and multi-pass expansion applied. Character stroke order is
- * preserved so multi-pass completes per character before moving on.
+ * with rotation applied. Engraved line width comes from the chosen bit, so the
+ * centreline is machined once — no faked thickness from parallel passes.
  */
 export function textElementStrokes(el: TextElement): Polyline[] {
   const font = getFont(el.fontName);
@@ -25,12 +25,8 @@ export function textElementStrokes(el: TextElement): Polyline[] {
   const layout = layoutText(el.text, font, el.fontSize, el.lineSpacing, el.align);
   const centre: Vec2 = { x: el.x + el.width / 2, y: el.y + el.height / 2 };
 
-  const out: Polyline[] = [];
-  for (const stroke of layout.strokes) {
+  return layout.strokes.map((stroke) => {
     const placed = stroke.map((p) => ({ x: el.x + p.x, y: el.y + p.y }));
-    for (const pass of expandMultiPass(placed, el.passCount, el.passSpacing)) {
-      out.push(el.rotation ? pass.map((p) => rotateAround(p, centre, el.rotation)) : pass);
-    }
-  }
-  return out;
+    return el.rotation ? placed.map((p) => rotateAround(p, centre, el.rotation)) : placed;
+  });
 }

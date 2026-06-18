@@ -1,10 +1,10 @@
 import type { ShapeElement, ShapeKind } from './types';
 import type { Stroke } from '../fonts/types';
-import { expandMultiPass, scaleStrokes, type Polyline } from '../fonts/strokeRenderer';
+import { scaleStrokes, type Polyline } from '../fonts/strokeRenderer';
 import { rotateAround, type Vec2 } from '../utils/geometry';
+import { isLine, lineEndpoints } from './line';
 
 const ARC_SEGMENTS = 48;
-const SHAPE_PASS_SPACING = 0.2;
 
 function circleStroke(): Stroke {
   const pts: Stroke = [];
@@ -82,15 +82,16 @@ function baseStrokes(el: ShapeElement): Polyline[] {
 
 /** Strokes for a shape element in label space (mm, y-down from label top-left). */
 export function shapeElementStrokes(el: ShapeElement): Polyline[] {
-  const centre: Vec2 = { x: el.x + el.width / 2, y: el.y + el.height / 2 };
-  const passCount = el.mode === 'engrave' ? el.passCount : 1;
-
-  const out: Polyline[] = [];
-  for (const stroke of baseStrokes(el)) {
-    const placed = stroke.map((p) => ({ x: el.x + p.x, y: el.y + p.y }));
-    for (const pass of expandMultiPass(placed, passCount, SHAPE_PASS_SPACING)) {
-      out.push(el.rotation ? pass.map((p) => rotateAround(p, centre, el.rotation)) : pass);
-    }
+  // A line is its two endpoints, drawn directly in label space (no bbox-relative
+  // diagonal), so it is exactly the segment the operator sees.
+  if (isLine(el)) {
+    const [a, b] = lineEndpoints(el);
+    return [[a, b]];
   }
-  return out;
+
+  const centre: Vec2 = { x: el.x + el.width / 2, y: el.y + el.height / 2 };
+  return baseStrokes(el).map((stroke) => {
+    const placed = stroke.map((p) => ({ x: el.x + p.x, y: el.y + p.y }));
+    return el.rotation ? placed.map((p) => rotateAround(p, centre, el.rotation)) : placed;
+  });
 }

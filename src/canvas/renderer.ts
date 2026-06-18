@@ -4,7 +4,9 @@ import type { BBox, Vec2 } from '../utils/geometry';
 import { bboxCentre, degToRad } from '../utils/geometry';
 import { mmToPx } from '../utils/units';
 import { elementStrokes, isCutShape } from '../gcode/toolpath';
-import { handlePositions, HANDLE_SIZE_PX } from './handles';
+import { resolveBit, bitWidthMm } from '../machineProfiles/bits';
+import { isLine } from '../elements/line';
+import { handlePositions, lineHandlePositions, HANDLE_SIZE_PX } from './handles';
 import { elementBBox } from './interaction';
 import type { AlignmentGuide } from './snapping';
 
@@ -146,7 +148,8 @@ export function render(ctx: CanvasRenderingContext2D, s: RenderState): void {
   for (const el of s.label.elements) {
     if (el.type === 'text' && el.id === s.editingTextId) continue; // textarea overlay replaces it
     ctx.strokeStyle = isCutShape(el) ? t.cut : t.stroke;
-    ctx.lineWidth = Math.max(1, mmToPx(0.2, s.zoom));
+    // Line width reflects the actual bit, so heavier text/shapes look heavier.
+    ctx.lineWidth = Math.max(1, mmToPx(bitWidthMm(resolveBit(s.profile, el.bitId)), s.zoom));
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     for (const stroke of elementStrokes(el)) {
@@ -169,6 +172,30 @@ export function render(ctx: CanvasRenderingContext2D, s: RenderState): void {
   // 6. Selection highlights + handles
   for (const el of s.label.elements) {
     if (!s.selectedIds.includes(el.id)) continue;
+
+    // Lines are shown as the segment itself — no rectangular bounding box.
+    if (isLine(el)) {
+      const handles = lineHandlePositions(el, toScreen);
+      ctx.beginPath();
+      ctx.strokeStyle = t.selection;
+      ctx.lineWidth = 1.5;
+      ctx.moveTo(handles[0].point.x, handles[0].point.y);
+      ctx.lineTo(handles[1].point.x, handles[1].point.y);
+      ctx.stroke();
+      if (s.selectedIds.length === 1 && !el.locked) {
+        for (const h of handles) {
+          ctx.beginPath();
+          ctx.fillStyle = t.handleFill;
+          ctx.strokeStyle = t.selection;
+          ctx.lineWidth = 1;
+          ctx.arc(h.point.x, h.point.y, HANDLE_SIZE_PX / 2, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+        }
+      }
+      continue;
+    }
+
     const bbox = elementBBox(el);
     drawRotatedBox(ctx, bbox, el.rotation, toScreen, t.selection, []);
     if (s.selectedIds.length === 1 && !el.locked) {

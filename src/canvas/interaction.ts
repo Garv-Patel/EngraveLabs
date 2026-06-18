@@ -1,7 +1,11 @@
 import type { Element } from '../elements/types';
 import type { BBox, Vec2 } from '../utils/geometry';
-import { pointInBBox, rotateAround, bboxCentre, bboxesIntersect } from '../utils/geometry';
+import { pointInBBox, rotateAround, bboxCentre, bboxesIntersect, distanceToSegment } from '../utils/geometry';
+import { isLine, lineEndpoints } from '../elements/line';
 import type { HandleId } from './handles';
+
+/** Pick tolerance for thin elements (lines), in mm. */
+const LINE_HIT_TOLERANCE_MM = 1.2;
 
 export function elementBBox(el: Element): BBox {
   return { x: el.x, y: el.y, width: el.width, height: el.height };
@@ -9,17 +13,34 @@ export function elementBBox(el: Element): BBox {
 
 /** Hit-test a label-space point against an element, respecting rotation. */
 export function hitTestElement(point: Vec2, el: Element): boolean {
+  if (isLine(el)) {
+    const [a, b] = lineEndpoints(el);
+    return distanceToSegment(point, a, b) <= LINE_HIT_TOLERANCE_MM;
+  }
   const bbox = elementBBox(el);
   const local = el.rotation ? rotateAround(point, bboxCentre(bbox), -el.rotation) : point;
   return pointInBBox(local, bbox);
 }
 
-/** Topmost element under a point (last in array = drawn last = on top). */
+/**
+ * Element to select under a point. When several overlap, the smallest one wins
+ * so a small object sitting on top of (or inside) a larger shape stays grabbable
+ * — otherwise the big background shape always swallows the click. Ties break to
+ * the topmost (last drawn).
+ */
 export function elementAtPoint(point: Vec2, elements: Element[]): Element | null {
+  let best: Element | null = null;
+  let bestArea = Infinity;
   for (let i = elements.length - 1; i >= 0; i--) {
-    if (hitTestElement(point, elements[i])) return elements[i];
+    const el = elements[i];
+    if (!hitTestElement(point, el)) continue;
+    const area = isLine(el) ? 0 : el.width * el.height;
+    if (area < bestArea) {
+      best = el;
+      bestArea = area;
+    }
   }
-  return null;
+  return best;
 }
 
 export function elementsInRect(rect: BBox, elements: Element[]): Element[] {

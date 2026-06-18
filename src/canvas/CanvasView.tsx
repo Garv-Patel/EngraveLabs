@@ -4,8 +4,9 @@ import type { TextElement, SymbolElement, ShapeElement } from '../elements/types
 import { useCanvasLoop } from './useCanvasLoop';
 import { render, RULER_SIZE_PX, type RenderState } from './renderer';
 import { elementAtPoint, elementBBox, elementsInRect, resizeBBox, rotationFromPointer } from './interaction';
-import { handlePositions, hitTestHandles, cursorForHandle, type HandleId } from './handles';
+import { handlePositions, lineHandlePositions, hitTestHandles, cursorForHandle, type HandleId } from './handles';
 import { snapToGrid, computeAlignmentSnap, type AlignmentGuide } from './snapping';
+import { isLine, lineEndpoints, lineBoxFromEndpoints } from '../elements/line';
 import { mmToPx, pxToMm } from '../utils/units';
 import { bboxCentre, bboxContains, clamp, rotateAround, type BBox, type Vec2 } from '../utils/geometry';
 import { MIN_ZOOM, MAX_ZOOM } from '../store/uiSlice';
@@ -25,6 +26,7 @@ type DragState =
       startFontSize: number | null;
     }
   | { mode: 'rotate'; id: string; centre: Vec2 }
+  | { mode: 'line-endpoint'; id: string; fixed: Vec2 }
   | { mode: 'marquee'; startMm: Vec2 };
 
 const DEFAULT_TEXT: Omit<TextElement, 'id' | 'x' | 'y'> = {
@@ -32,16 +34,18 @@ const DEFAULT_TEXT: Omit<TextElement, 'id' | 'x' | 'y'> = {
   text: 'TEXT',
   fontName: 'hershey_simplex',
   fontSize: 6,
-  passCount: 1,
-  passSpacing: 0.2,
   lineSpacing: 2,
   align: 'left',
   engraveDepth: null,
+  bitId: null,
   width: 1,
   height: 1,
   rotation: 0,
   locked: false,
 };
+
+/** Default length of a freshly placed line, in mm. */
+const DEFAULT_LINE_LENGTH = 20;
 
 export function CanvasView() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -129,7 +133,7 @@ export function CanvasView() {
           height: size,
           rotation: 0,
           locked: false,
-          passCount: 1,
+          bitId: null,
           engraveDepth: null,
         };
         s.addElement(el);
@@ -138,21 +142,23 @@ export function CanvasView() {
         return;
       }
       if (s.activeTool === 'shape') {
+        const isLineKind = s.pendingShapeKind === 'line';
         const size = 20;
         const el: ShapeElement = {
           type: 'shape',
           id: crypto.randomUUID(),
           shapeKind: s.pendingShapeKind,
           mode: 'engrave',
-          x: world.x - size / 2,
-          y: world.y - size / 2,
-          width: size,
-          height: size,
+          x: isLineKind ? world.x - DEFAULT_LINE_LENGTH / 2 : world.x - size / 2,
+          y: isLineKind ? world.y : world.y - size / 2,
+          width: isLineKind ? DEFAULT_LINE_LENGTH : size,
+          height: isLineKind ? 0 : size,
           rotation: 0,
           locked: false,
           cornerRadius: 0,
-          passCount: 1,
           engraveDepth: null,
+          bitId: null,
+          ...(isLineKind ? { lineFlipped: false } : {}),
         };
         s.addElement(el);
         s.setSelection([el.id]);
@@ -163,7 +169,17 @@ export function CanvasView() {
       // Select tool: handles first (single selection only)
       if (s.selectedIds.length === 1) {
         const el = s.project.label.elements.find((x) => x.id === s.selectedIds[0]);
-        if (el && !el.locked) {
+        if (el && !el.locked && isLine(el)) {
+          const toScreen = (p: Vec2): Vec2 => ({ x: s.panX + mmToPx(p.x, s.zoom), y: s.panY + mmToPx(p.y, s.zoom) });
+          const handle = hitTestHandles(screen, lineHandlePositions(el, toScreen));
+          if (handle === 'lineA' || handle === 'lineB') {
+            s.pushHistory();
+            const [a, b] = lineEndpoints(el);
+            drag.current = { mode: 'line-endpoint', id: el.id, fixed: handle === 'lineA' ? b : a };
+            return;
+          }
+        }
+        if (el && !el.locked && !isLine(el)) {
           const toScreen = (p: Vec2): Vec2 => ({ x: s.panX + mmToPx(p.x, s.zoom), y: s.panY + mmToPx(p.y, s.zoom) });
           const handle = hitTestHandles(screen, handlePositions(elementBBox(el), el.rotation, toScreen));
           if (handle === 'rot') {
@@ -235,7 +251,10 @@ export function CanvasView() {
           const el = s.project.label.elements.find((x) => x.id === s.selectedIds[0]);
           if (el && !el.locked) {
             const toScreen = (p: Vec2): Vec2 => ({ x: s.panX + mmToPx(p.x, s.zoom), y: s.panY + mmToPx(p.y, s.zoom) });
-            const handle = hitTestHandles(screen, handlePositions(elementBBox(el), el.rotation, toScreen));
+            const handles = isLine(el)
+              ? lineHandlePositions(el, toScreen)
+              : handlePositions(elementBBox(el), el.rotation, toScreen);
+            const handle = hitTestHandles(screen, handles);
             if (handle) cursor = cursorForHandle(handle);
           }
         }
@@ -317,6 +336,15 @@ export function CanvasView() {
         } else {
           s.updateElement(d.id, { x: next.x, y: next.y, width: next.width, height: next.height });
         }
+        return;
+      }
+
+      if (d.mode === 'line-endpoint') {
+        let moving = world;
+        if (s.gridEnabled && !e.ctrlKey) {
+          moving = { x: snapToGrid(world.x, s.gridSpacing), y: snapToGrid(world.y, s.gridSpacing) };
+        }
+        s.updateElement(d.id, lineBoxFromEndpoints(moving, d.fixed));
         return;
       }
 

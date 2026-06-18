@@ -2,7 +2,8 @@ import type { Element, Label, ShapeElement } from './types';
 
 /**
  * Convert legacy v1 'border' elements (removed in favour of cut-mode shapes)
- * into cut rectangles, and backfill fields added to ShapeElement since.
+ * into cut rectangles, drop the old multi-pass thickness fields (replaced by
+ * per-element bit selection), and backfill fields added since.
  */
 export function migrateElement(raw: Record<string, unknown>, label: { width: number; height: number }): Element {
   if (raw.type === 'border') {
@@ -18,12 +19,17 @@ export function migrateElement(raw: Record<string, unknown>, label: { width: num
       rotation: 0,
       locked: false,
       cornerRadius: (raw.cornerRadius as number) ?? 0,
-      passCount: 1,
       engraveDepth: (raw.engraveDepth as number | null) ?? null,
+      bitId: null,
     };
     return shape;
   }
-  return raw as unknown as Element;
+  // Strip removed fields; default the bit to the profile default (null).
+  const { passCount: _passCount, passSpacing: _passSpacing, ...rest } = raw as Record<string, unknown>;
+  void _passCount;
+  void _passSpacing;
+  if (!('bitId' in rest)) rest.bitId = null;
+  return rest as unknown as Element;
 }
 
 export function migrateLabel(label: Label): Label {

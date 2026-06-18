@@ -101,3 +101,14 @@ export function bboxOfPoints(points: Vec2[]): BBox {
 export function clamp(v: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, v));
 }
+
+/** Shortest distance from point p to the segment a–b. */
+export function distanceToSegment(p: Vec2, a: Vec2, b: Vec2): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq === 0) return distance(p, a);
+  let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / lenSq;
+  t = clamp(t, 0, 1);
+  return distance(p, { x: a.x + t * dx, y: a.y + t * dy });
+}

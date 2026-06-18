@@ -17,7 +17,6 @@ const SHAPES: { kind: ShapeKind; label: string }[] = [
   { kind: 'circle', label: '◯ Circle' },
   { kind: 'triangle', label: '△ Triangle' },
   { kind: 'line', label: '╱ Line' },
-  { kind: 'flash', label: '⚡ Flash' },
 ];
 
 export function Toolbar() {

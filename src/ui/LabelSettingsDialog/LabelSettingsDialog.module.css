@@ -24,3 +24,10 @@
 .row > * {
   flex: 1;
 }
+
+.note {
+  font-size: 11px;
+  color: var(--text-dim);
+  line-height: 1.5;
+  margin-bottom: 10px;
+}

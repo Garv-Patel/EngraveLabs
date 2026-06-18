@@ -13,8 +13,6 @@ function textEl(overrides: Partial<TextElement> = {}): TextElement {
     text: 'AB',
     fontName: 'hershey_simplex',
     fontSize: 6,
-    passCount: 1,
-    passSpacing: 0.2,
     lineSpacing: 2,
     align: 'left',
     engraveDepth: null,
@@ -33,7 +31,6 @@ function symbolEl(overrides: Partial<SymbolElement> = {}): SymbolElement {
     id: 's1',
     type: 'symbol',
     symbolName: 'warning',
-    passCount: 1,
     engraveDepth: null,
     x: 40,
     y: 10,
@@ -52,7 +49,6 @@ function cutRectEl(overrides: Partial<ShapeElement> = {}): ShapeElement {
     shapeKind: 'rectangle',
     mode: 'cut',
     cornerRadius: 0,
-    passCount: 1,
     engraveDepth: null,
     x: 0,
     y: 0,
@@ -150,15 +146,10 @@ describe('generateGcode', () => {
     expect(gcode.indexOf('M3 ')).toBeLessThan(gcode.indexOf('G1 Z'));
   });
 
-  it('multi-pass produces more ops than single pass', () => {
-    const single = generateGcode({ label: makeLabel([textEl()]), profile, originX: 0, originY: 0 });
-    const multi = generateGcode({
-      label: makeLabel([textEl({ passCount: 3 })]),
-      profile,
-      originX: 0,
-      originY: 0,
-    });
-    expect(multi.ops.length).toBe(single.ops.length * 3);
+  it('engraves each text stroke once — line width comes from the bit, not extra passes', () => {
+    const { ops } = generateGcode({ label: makeLabel([textEl({ text: 'I' })]), profile, originX: 0, originY: 0 });
+    // A single capital "I" is one stroke; one op, not several offset copies.
+    expect(ops).toHaveLength(1);
   });
 });
 

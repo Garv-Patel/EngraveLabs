@@ -1,7 +1,8 @@
 import type { BBox, Vec2 } from '../utils/geometry';
 import { rotateAround, bboxCentre } from '../utils/geometry';
+import { lineEndpoints, type LineElement } from '../elements/line';
 
-export type HandleId = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w' | 'rot';
+export type HandleId = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w' | 'rot' | 'lineA' | 'lineB';
 
 export const HANDLE_SIZE_PX = 8; // constant screen size, independent of zoom
 export const ROTATION_HANDLE_OFFSET_PX = 24; // distance above the top-centre handle
@@ -23,7 +24,8 @@ export function handlePositions(
 ): HandlePosition[] {
   const { x, y, width: w, height: h } = bbox;
   const centre = bboxCentre(bbox);
-  const world: Record<Exclude<HandleId, 'rot'>, Vec2> = {
+  type BoxHandleId = Exclude<HandleId, 'rot' | 'lineA' | 'lineB'>;
+  const world: Record<BoxHandleId, Vec2> = {
     nw: { x, y },
     n: { x: x + w / 2, y },
     ne: { x: x + w, y },
@@ -33,7 +35,7 @@ export function handlePositions(
     sw: { x, y: y + h },
     w: { x, y: y + h / 2 },
   };
-  const positions: HandlePosition[] = (Object.keys(world) as Exclude<HandleId, 'rot'>[]).map((id) => ({
+  const positions: HandlePosition[] = (Object.keys(world) as BoxHandleId[]).map((id) => ({
     id,
     point: toScreen(rotation ? rotateAround(world[id], centre, rotation) : world[id]),
   }));
@@ -51,6 +53,15 @@ export function handlePositions(
     },
   });
   return positions;
+}
+
+/** The two draggable endpoint handles of a line, in screen px. */
+export function lineHandlePositions(el: LineElement, toScreen: (p: Vec2) => Vec2): HandlePosition[] {
+  const [a, b] = lineEndpoints(el);
+  return [
+    { id: 'lineA', point: toScreen(a) },
+    { id: 'lineB', point: toScreen(b) },
+  ];
 }
 
 /** Hit-test a screen point against handles; returns the handle id or null. */
@@ -80,5 +91,8 @@ export function cursorForHandle(id: HandleId): string {
       return 'ew-resize';
     case 'rot':
       return 'grab';
+    case 'lineA':
+    case 'lineB':
+      return 'move';
   }
 }
