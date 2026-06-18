@@ -2,8 +2,10 @@ import type { Label, ShapeElement } from '../elements/types';
 import type { MachineProfile } from '../machineProfiles/types';
 import { dialects, type GenerateResult } from './generator';
 import { grbl } from './dialects/grbl';
-import { elementDepth, elementStrokes, isCutShape, orderElements, type PathOp } from './toolpath';
+import { elementDepth, elementStrokes, findOuterCutShape, isCutShape, orderElements, type PathOp } from './toolpath';
 import type { BBox, Vec2 } from '../utils/geometry';
+
+export { findOuterCutShape };
 
 export type PanelStrategy = 'grid-shared' | 'grid' | 'hex';
 
@@ -30,13 +32,6 @@ export interface PanelOptions {
   originX: number;
   originY: number;
   projectName?: string;
-}
-
-/** The outermost cut shape (largest bbox area) defines the panel tile. */
-export function findOuterCutShape(label: Label): ShapeElement | null {
-  const cuts = label.elements.filter(isCutShape);
-  if (cuts.length === 0) return null;
-  return cuts.reduce((a, b) => (b.width * b.height > a.width * a.height ? b : a));
 }
 
 interface CellLayout {

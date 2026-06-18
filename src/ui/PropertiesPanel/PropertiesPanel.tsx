@@ -1,7 +1,9 @@
-import { useStore } from '../../store';
+import { useStore, selectActiveProfile } from '../../store';
 import type { Element, TextElement, SymbolElement, ShapeElement, ShapeKind } from '../../elements/types';
 import { listFonts } from '../../fonts/fontRegistry';
 import { listSymbols } from '../../symbols/symbolRegistry';
+import { profileBits, resolveBit, bitLabel } from '../../machineProfiles/bits';
+import { isLine, lineEndpoints, lineBoxFromEndpoints } from '../../elements/line';
 import { NumberField } from '../common/NumberField';
 import { alignSelection, distributeSelection, type AlignAction } from './alignment';
 import styles from './PropertiesPanel.module.css';
@@ -49,6 +51,49 @@ function CommonPosition({ el }: { el: Element }) {
         Lock element
       </label>
     </>
+  );
+}
+
+function BitField({ el }: { el: Element }) {
+  const update = useUpdate();
+  const profile = useStore(selectActiveProfile);
+  const bits = profileBits(profile);
+  const defaultBit = resolveBit(profile, null);
+  return (
+    <label className={styles.field}>
+      <span className={styles.fieldLabel}>Bit</span>
+      <select value={el.bitId ?? ''} onChange={(e) => update(el.id, { bitId: e.target.value || null })}>
+        <option value="">Default — {bitLabel(defaultBit)}</option>
+        {bits.map((b) => (
+          <option key={b.id} value={b.id}>
+            {bitLabel(b)}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function BitFieldMulti({ els }: { els: Element[] }) {
+  const update = useUpdate();
+  const profile = useStore(selectActiveProfile);
+  const bits = profileBits(profile);
+  const shared = els.every((e) => (e.bitId ?? '') === (els[0].bitId ?? ''));
+  return (
+    <label className={styles.field}>
+      <span className={styles.fieldLabel}>Bit</span>
+      <select
+        value={shared ? els[0].bitId ?? '' : ''}
+        onChange={(e) => els.forEach((el) => update(el.id, { bitId: e.target.value || null }))}
+      >
+        <option value="">Default bit</option>
+        {bits.map((b) => (
+          <option key={b.id} value={b.id}>
+            {bitLabel(b)}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 
@@ -104,25 +149,7 @@ function TextProps({ el }: { el: TextElement }) {
           onChange={(v) => update(el.id, { lineSpacing: v })}
         />
       </div>
-      <div className={styles.row}>
-        <NumberField
-          label="Passes"
-          raw
-          value={el.passCount}
-          min={1}
-          max={10}
-          step={1}
-          onChange={(v) => update(el.id, { passCount: Math.round(v) })}
-        />
-        {el.passCount > 1 && (
-          <NumberField
-            label="Pass spacing"
-            value={el.passSpacing}
-            min={0.01}
-            onChange={(v) => update(el.id, { passSpacing: v })}
-          />
-        )}
-      </div>
+      <BitField el={el} />
       <div className={styles.field}>
         <span className={styles.fieldLabel}>Alignment</span>
         <div className={styles.btnRow}>
@@ -161,15 +188,7 @@ function SymbolProps({ el }: { el: SymbolElement }) {
         <NumberField label="Width" value={el.width} min={1} onChange={(v) => update(el.id, { width: v })} />
         <NumberField label="Height" value={el.height} min={1} onChange={(v) => update(el.id, { height: v })} />
       </div>
-      <NumberField
-        label="Passes"
-        raw
-        value={el.passCount}
-        min={1}
-        max={10}
-        step={1}
-        onChange={(v) => update(el.id, { passCount: Math.round(v) })}
-      />
+      <BitField el={el} />
       <DepthField el={el} />
       <CommonPosition el={el} />
     </div>
@@ -181,7 +200,6 @@ const SHAPE_KINDS: { kind: ShapeKind; label: string }[] = [
   { kind: 'circle', label: 'Circle' },
   { kind: 'triangle', label: 'Triangle' },
   { kind: 'line', label: 'Line' },
-  { kind: 'flash', label: 'Flash' },
 ];
 
 function ShapeProps({ el }: { el: ShapeElement }) {
@@ -221,32 +239,45 @@ function ShapeProps({ el }: { el: ShapeElement }) {
       {el.mode === 'cut' && (
         <div className={styles.note}>Cut shapes always run last (innermost first) at material thickness.</div>
       )}
-      <div className={styles.row}>
-        <NumberField label="Width" value={el.width} min={0.5} onChange={(v) => update(el.id, { width: v })} />
-        <NumberField label="Height" value={el.height} min={0.5} onChange={(v) => update(el.id, { height: v })} />
-      </div>
-      {el.shapeKind === 'rectangle' && (
-        <NumberField
-          label="Corner radius"
-          value={el.cornerRadius}
-          min={0}
-          onChange={(v) => update(el.id, { cornerRadius: v })}
-        />
+      {isLine(el) ? (
+        <LineEndpoints el={el} />
+      ) : (
+        <>
+          <div className={styles.row}>
+            <NumberField label="Width" value={el.width} min={0.5} onChange={(v) => update(el.id, { width: v })} />
+            <NumberField label="Height" value={el.height} min={0.5} onChange={(v) => update(el.id, { height: v })} />
+          </div>
+          {el.shapeKind === 'rectangle' && (
+            <NumberField
+              label="Corner radius"
+              value={el.cornerRadius}
+              min={0}
+              onChange={(v) => update(el.id, { cornerRadius: v })}
+            />
+          )}
+        </>
       )}
-      {el.mode === 'engrave' && (
-        <NumberField
-          label="Passes"
-          raw
-          value={el.passCount}
-          min={1}
-          max={10}
-          step={1}
-          onChange={(v) => update(el.id, { passCount: Math.round(v) })}
-        />
-      )}
+      <BitField el={el} />
       <DepthField el={el} />
       <CommonPosition el={el} />
     </div>
+  );
+}
+
+function LineEndpoints({ el }: { el: ShapeElement }) {
+  const update = useUpdate();
+  const [a, b] = lineEndpoints(el as ShapeElement & { shapeKind: 'line' });
+  return (
+    <>
+      <div className={styles.row}>
+        <NumberField label="X1" value={a.x} onChange={(v) => update(el.id, lineBoxFromEndpoints({ x: v, y: a.y }, b))} />
+        <NumberField label="Y1" value={a.y} onChange={(v) => update(el.id, lineBoxFromEndpoints({ x: a.x, y: v }, b))} />
+      </div>
+      <div className={styles.row}>
+        <NumberField label="X2" value={b.x} onChange={(v) => update(el.id, lineBoxFromEndpoints(a, { x: v, y: b.y }))} />
+        <NumberField label="Y2" value={b.y} onChange={(v) => update(el.id, lineBoxFromEndpoints(a, { x: b.x, y: v }))} />
+      </div>
+    </>
   );
 }
 
@@ -262,10 +293,6 @@ const ALIGN_ACTIONS: { action: AlignAction; label: string }[] = [
 function MultiElementProps({ els }: { els: Element[] }) {
   const update = useUpdate();
   const sharedDepth = els.every((e) => e.engraveDepth === els[0].engraveDepth);
-  const withPass = els.filter(
-    (e): e is TextElement | SymbolElement | ShapeElement => e.type !== 'shape' || e.mode === 'engrave',
-  );
-  const sharedPass = withPass.length > 0 && withPass.every((e) => e.passCount === withPass[0].passCount);
 
   return (
     <div>
@@ -288,17 +315,7 @@ function MultiElementProps({ els }: { els: Element[] }) {
           </button>
         </div>
       </div>
-      {withPass.length > 0 && (
-        <NumberField
-          label="Passes"
-          raw
-          value={sharedPass ? withPass[0].passCount : 1}
-          min={1}
-          max={10}
-          step={1}
-          onChange={(v) => withPass.forEach((e) => update(e.id, { passCount: Math.round(v) }))}
-        />
-      )}
+      <BitFieldMulti els={els} />
       <NumberField
         label="Engrave depth"
         value={sharedDepth ? (els[0].engraveDepth ?? 0.3) : 0.3}

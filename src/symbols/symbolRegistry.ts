@@ -2,6 +2,7 @@ import type { SymbolDef } from './types';
 import { warning } from './builtin/warning';
 import { voltage } from './builtin/voltage';
 import { noEntry } from './builtin/noEntry';
+import { electricalSymbols } from './builtin/electrical';
 
 const symbols = new Map<string, SymbolDef>();
 
@@ -20,5 +21,6 @@ export function listSymbols(): SymbolDef[] {
 registerSymbol(warning);
 registerSymbol(voltage);
 registerSymbol(noEntry);
+for (const sym of electricalSymbols) registerSymbol(sym);
 
 export const DEFAULT_SYMBOL_NAME = 'warning';

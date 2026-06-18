@@ -1,6 +1,5 @@
 import type { FontDef, Stroke } from './types';
 import type { Vec2 } from '../utils/geometry';
-import { normalize, perp } from '../utils/geometry';
 
 export type Polyline = Vec2[];
 
@@ -67,26 +66,4 @@ export function layoutText(
 /** Scale normalised symbol strokes (0–1 square) to a width × height mm box. */
 export function scaleStrokes(strokes: Stroke[], width: number, height: number): Polyline[] {
   return strokes.map((s) => s.map(([x, y]) => ({ x: x * width, y: y * height })));
-}
-
-/**
- * Expand a polyline into `passCount` laterally offset copies spaced `passSpacing`
- * mm apart, centred on the original. Pass 1 returns the original unchanged.
- */
-export function expandMultiPass(stroke: Polyline, passCount: number, passSpacing: number): Polyline[] {
-  if (passCount <= 1 || stroke.length < 2) return [stroke];
-
-  // Per-vertex offset directions: average of adjacent segment normals.
-  const normals: Vec2[] = stroke.map((_, i) => {
-    const prev = stroke[Math.max(0, i - 1)];
-    const next = stroke[Math.min(stroke.length - 1, i + 1)];
-    return normalize(perp({ x: next.x - prev.x, y: next.y - prev.y }));
-  });
-
-  const passes: Polyline[] = [];
-  for (let k = 0; k < passCount; k++) {
-    const offset = (k - (passCount - 1) / 2) * passSpacing;
-    passes.push(stroke.map((p, i) => ({ x: p.x + normals[i].x * offset, y: p.y + normals[i].y * offset })));
-  }
-  return passes;
 }

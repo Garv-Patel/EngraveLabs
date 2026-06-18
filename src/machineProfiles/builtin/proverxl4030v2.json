@@ -18,5 +18,12 @@
   "spindleOffCmd": "M5",
   "programEndCmd": "M30",
   "coordMode": "absolute",
-  "gcodeExtension": "nc"
+  "gcodeExtension": "nc",
+  "defaultBitId": "engrave-02",
+  "bits": [
+    { "id": "engrave-02", "name": "Engraving 0.2 mm", "type": "engrave", "diameter": 0.2 },
+    { "id": "engrave-05", "name": "Engraving 0.5 mm", "type": "engrave", "diameter": 0.5 },
+    { "id": "vbit-30", "name": "V-bit", "type": "vbit", "diameter": 0.2, "angle": 30 },
+    { "id": "flat-3175", "name": "Cutting end mill", "type": "flat", "diameter": 3.175 }
+  ]
 }

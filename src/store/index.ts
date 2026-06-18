@@ -19,7 +19,7 @@ export const useStore = create<AppState>()(
     }),
     {
       name: 'engravelab.project',
-      version: 2,
+      version: 3,
       partialize: (s) => ({
         project: s.project,
         gridEnabled: s.gridEnabled,

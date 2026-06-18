@@ -6,6 +6,8 @@ export interface BaseElement {
   height: number; // mm bounding box height
   rotation: number; // degrees
   locked: boolean;
+  /** Cutter used for this element; null = the machine profile's default bit. */
+  bitId?: string | null;
 }
 
 export interface TextElement extends BaseElement {
@@ -13,8 +15,6 @@ export interface TextElement extends BaseElement {
   text: string;
   fontName: string; // e.g. "hershey_simplex"
   fontSize: number; // mm cap height
-  passCount: number; // 1 = single stroke; N = N parallel offset passes
-  passSpacing: number; // mm between passes (multi-pass mode)
   lineSpacing: number; // mm between lines
   align: 'left' | 'centre' | 'right';
   engraveDepth: number | null; // null = use machine profile default
@@ -23,10 +23,11 @@ export interface TextElement extends BaseElement {
 export interface SymbolElement extends BaseElement {
   type: 'symbol';
   symbolName: string; // key in symbol registry
-  passCount: number;
   engraveDepth: number | null;
 }
 
+// 'flash' is retained for backward compatibility only — the lightning glyph now
+// lives in the symbol library. The shape tool offers geometric primitives only.
 export type ShapeKind = 'rectangle' | 'circle' | 'triangle' | 'line' | 'flash';
 
 export interface ShapeElement extends BaseElement {
@@ -39,8 +40,13 @@ export interface ShapeElement extends BaseElement {
    */
   mode: 'engrave' | 'cut';
   cornerRadius: number; // mm — rectangles only
-  passCount: number; // engrave mode: parallel offset passes
   engraveDepth: number | null; // null = machine default (cut: material thickness)
+  /**
+   * Lines only. The segment runs between two opposite corners of the bbox:
+   * false → top-left to bottom-right; true → bottom-left to top-right.
+   * A line is defined by its two endpoints, not by a filled rectangle.
+   */
+  lineFlipped?: boolean;
 }
 
 export type Element = TextElement | SymbolElement | ShapeElement;

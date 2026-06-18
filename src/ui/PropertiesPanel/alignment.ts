@@ -1,17 +1,19 @@
 import { useStore } from '../../store';
+import { partBBox } from '../../gcode/toolpath';
 
 export type AlignAction = 'left' | 'centreH' | 'right' | 'top' | 'centreV' | 'bottom';
 
-/** Align the current selection. With one element selected, aligns to the label. */
+/** Align the current selection. With one element selected, aligns to the part outline. */
 export function alignSelection(action: AlignAction): void {
   const s = useStore.getState();
   const els = s.project.label.elements.filter((el) => s.selectedIds.includes(el.id) && !el.locked);
   if (els.length === 0) return;
   s.pushHistory();
 
+  const part = partBBox(s.project.label);
   const bounds =
     els.length === 1
-      ? { x: 0, y: 0, right: s.project.label.width, bottom: s.project.label.height }
+      ? { x: part.x, y: part.y, right: part.x + part.width, bottom: part.y + part.height }
       : {
           x: Math.min(...els.map((e) => e.x)),
           y: Math.min(...els.map((e) => e.y)),

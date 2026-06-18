@@ -87,6 +87,69 @@
   opacity: 0.55;
 }
 
+.bits {
+  margin-top: 6px;
+}
+
+.bitsHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-bottom: 5px;
+}
+
+.bitsHead button {
+  font-size: 10px;
+  padding: 3px 7px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: none;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.bitRow {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 5px;
+}
+
+.bitRow input[type='text'] {
+  flex: 1;
+  min-width: 0;
+}
+
+.bitRow input[type='number'] {
+  width: 58px;
+}
+
+.bitRow input,
+.bitRow select {
+  background: var(--input-bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 5px;
+  font-size: 11px;
+}
+
+.bitRow input:disabled,
+.bitRow select:disabled {
+  opacity: 0.55;
+}
+
+.bitRow > button {
+  border: none;
+  background: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+}
+
 .footer {
   display: flex;
   justify-content: flex-end;

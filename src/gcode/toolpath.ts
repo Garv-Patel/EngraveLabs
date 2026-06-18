@@ -4,7 +4,7 @@ import { textElementStrokes } from '../elements/TextElement';
 import { symbolElementStrokes } from '../elements/SymbolElement';
 import { shapeElementStrokes } from '../elements/ShapeElement';
 import type { Polyline } from '../fonts/strokeRenderer';
-import type { Vec2 } from '../utils/geometry';
+import type { BBox, Vec2 } from '../utils/geometry';
 
 /** One continuous engraving path at a single depth, in machine coordinates (y-up). */
 export interface PathOp {
@@ -16,18 +16,39 @@ export interface PathOp {
 export interface ToolpathOptions {
   label: Label;
   profile: MachineProfile;
-  /** mm offset of the label's bottom-left corner on the machine bed. */
+  /** mm offset of the part's bottom-left corner on the machine bed. */
   originX: number;
   originY: number;
 }
 
-/** Label space (mm, y-down from label top-left) → machine space (mm, y-up). */
-export function labelToMachine(p: Vec2, label: Label, originX: number, originY: number): Vec2 {
-  return { x: originX + p.x, y: originY + (label.height - p.y) };
-}
-
 export function isCutShape(el: Element): el is ShapeElement {
   return el.type === 'shape' && el.mode === 'cut';
+}
+
+/** The outermost cut shape (largest bbox area) defines the part outline. */
+export function findOuterCutShape(label: Label): ShapeElement | null {
+  const cuts = label.elements.filter(isCutShape);
+  if (cuts.length === 0) return null;
+  return cuts.reduce((a, b) => (b.width * b.height > a.width * a.height ? b : a));
+}
+
+/**
+ * Bounding box of the part, in label space. This is the outermost cut shape —
+ * the actual outline the machine frees from the stock — falling back to the
+ * label rectangle only when nothing has been marked for cutting yet.
+ */
+export function partBBox(label: Label): BBox {
+  const outer = findOuterCutShape(label);
+  if (outer) return { x: outer.x, y: outer.y, width: outer.width, height: outer.height };
+  return { x: 0, y: 0, width: label.width, height: label.height };
+}
+
+/**
+ * Label space (mm, y-down) → machine space (mm, y-up), placing the part's
+ * bottom-left corner at (originX, originY) on the bed.
+ */
+export function partToMachine(p: Vec2, part: BBox, originX: number, originY: number): Vec2 {
+  return { x: originX + (p.x - part.x), y: originY + (part.y + part.height - p.y) };
 }
 
 export function elementDepth(el: Element, profile: MachineProfile): number {
@@ -79,13 +100,14 @@ export function orderElements(elements: Element[]): Element[] {
 /** Build the full job toolpath with engraving-first ordering. */
 export function buildToolpath(opts: ToolpathOptions): PathOp[] {
   const { label, profile, originX, originY } = opts;
+  const part = partBBox(label);
   const ops: PathOp[] = [];
   for (const el of orderElements(label.elements)) {
     const depth = elementDepth(el, profile);
     elementStrokes(el).forEach((stroke, i) => {
       if (stroke.length < 2) return;
       ops.push({
-        points: stroke.map((p) => labelToMachine(p, label, originX, originY)),
+        points: stroke.map((p) => partToMachine(p, part, originX, originY)),
         depth,
         comment: i === 0 ? describeElement(el) : undefined,
       });

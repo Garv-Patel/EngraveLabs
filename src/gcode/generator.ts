@@ -4,7 +4,7 @@ import type { DialectDef } from './dialects/types';
 import { grbl } from './dialects/grbl';
 import { mach3 } from './dialects/mach3';
 import { linuxcnc } from './dialects/linuxcnc';
-import { buildToolpath, type PathOp } from './toolpath';
+import { buildToolpath, partBBox, type PathOp } from './toolpath';
 
 export const dialects: Record<string, DialectDef> = {
   grbl,
@@ -40,11 +40,14 @@ export function generateGcode(opts: GenerateOptions): GenerateResult {
   const ctx = { profile, projectName: opts.projectName ?? label.name };
   const c = dialect.comment;
   const ops = buildToolpath({ label, profile, originX, originY });
+  const part = partBBox(label);
 
   const lines: string[] = [];
   // 1. Program header
   lines.push(c(`EngraveLab - ${ctx.projectName}`));
-  lines.push(c(`Label: ${label.width} x ${label.height} mm at origin X${fmt(originX)} Y${fmt(originY)}`));
+  lines.push(
+    c(`Part: ${fmt(part.width)} x ${fmt(part.height)} mm (outermost cut) at origin X${fmt(originX)} Y${fmt(originY)}`),
+  );
   lines.push(c(`Machine: ${profile.name} (${dialect.name})`));
   lines.push(c('Engraving-first order: text, symbols, engrave shapes, then cut shapes last'));
   lines.push(...dialect.header(ctx));
@@ -88,27 +91,33 @@ export interface ValidationIssue {
 export function validateJob(opts: GenerateOptions): ValidationIssue[] {
   const { label, profile, originX, originY } = opts;
   const issues: ValidationIssue[] = [];
+  const part = partBBox(label);
 
   if (label.elements.length === 0) {
     issues.push({ level: 'error', message: 'Label has no elements — nothing to engrave.' });
   }
 
   for (const el of label.elements) {
-    if (el.x < 0 || el.y < 0 || el.x + el.width > label.width || el.y + el.height > label.height) {
+    if (
+      el.x < part.x ||
+      el.y < part.y ||
+      el.x + el.width > part.x + part.width ||
+      el.y + el.height > part.y + part.height
+    ) {
       const name =
         el.type === 'text'
           ? `Text "${el.text.split('\n')[0]}"`
           : el.type === 'symbol'
             ? `Symbol ${el.symbolName}`
             : `Shape ${el.shapeKind}`;
-      issues.push({ level: 'warning', message: `${name} extends outside the label boundary.` });
+      issues.push({ level: 'warning', message: `${name} extends outside the part outline.` });
     }
   }
 
-  if (originX < 0 || originY < 0 || originX + label.width > profile.workAreaX || originY + label.height > profile.workAreaY) {
+  if (originX < 0 || originY < 0 || originX + part.width > profile.workAreaX || originY + part.height > profile.workAreaY) {
     issues.push({
       level: 'error',
-      message: `Label plus origin exceeds the machine work area (${profile.workAreaX} x ${profile.workAreaY} mm).`,
+      message: `Part plus origin exceeds the machine work area (${profile.workAreaX} x ${profile.workAreaY} mm).`,
     });
   }
 

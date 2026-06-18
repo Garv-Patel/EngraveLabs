@@ -3,8 +3,10 @@ import type { MachineProfile } from '../machineProfiles/types';
 import type { BBox, Vec2 } from '../utils/geometry';
 import { bboxCentre, degToRad } from '../utils/geometry';
 import { mmToPx } from '../utils/units';
-import { elementStrokes, isCutShape } from '../gcode/toolpath';
-import { handlePositions, HANDLE_SIZE_PX } from './handles';
+import { elementStrokes, isCutShape, partBBox } from '../gcode/toolpath';
+import { resolveBit, bitWidthMm } from '../machineProfiles/bits';
+import { isLine } from '../elements/line';
+import { handlePositions, lineHandlePositions, HANDLE_SIZE_PX } from './handles';
 import { elementBBox } from './interaction';
 import type { AlignmentGuide } from './snapping';
 
@@ -95,48 +97,45 @@ export function render(ctx: CanvasRenderingContext2D, s: RenderState): void {
   ctx.fillStyle = t.bg;
   ctx.fillRect(0, 0, s.width, s.height);
 
-  // 2. Machine bed (label space: bed bottom-left is machine origin)
-  const bedTopLeft = toScreen({
-    x: -s.originX,
-    y: s.label.height + s.originY - s.profile.workAreaY,
-  });
-  ctx.fillStyle = t.bed;
+  // 2. Machine bed = the stock surface (the full work area is the background).
+  // The part's bottom-left sits at (originX, originY), so machine (0,0) is the
+  // bed's bottom-left corner.
+  const part = partBBox(s.label);
+  const bedX0 = part.x - s.originX; // label-space x of machine x=0
+  const bedY1 = part.y + part.height + s.originY; // label-space y of machine y=0 (bottom)
+  const bedTopLeft = toScreen({ x: bedX0, y: bedY1 - s.profile.workAreaY });
+  const bedW = mmToPx(s.profile.workAreaX, s.zoom);
+  const bedH = mmToPx(s.profile.workAreaY, s.zoom);
+  ctx.fillStyle = s.label.backgroundColor || '#ffffff';
+  ctx.fillRect(bedTopLeft.x, bedTopLeft.y, bedW, bedH);
   ctx.strokeStyle = t.bedBorder;
   ctx.lineWidth = 1;
-  ctx.fillRect(bedTopLeft.x, bedTopLeft.y, mmToPx(s.profile.workAreaX, s.zoom), mmToPx(s.profile.workAreaY, s.zoom));
-  ctx.strokeRect(bedTopLeft.x, bedTopLeft.y, mmToPx(s.profile.workAreaX, s.zoom), mmToPx(s.profile.workAreaY, s.zoom));
+  ctx.strokeRect(bedTopLeft.x, bedTopLeft.y, bedW, bedH);
 
-  // 3. Label boundary
-  const labelTL = toScreen({ x: 0, y: 0 });
-  const labelW = mmToPx(s.label.width, s.zoom);
-  const labelH = mmToPx(s.label.height, s.zoom);
-  ctx.fillStyle = s.label.backgroundColor || '#ffffff';
-  ctx.fillRect(labelTL.x, labelTL.y, labelW, labelH);
-  ctx.strokeStyle = t.labelBorder;
-  ctx.strokeRect(labelTL.x, labelTL.y, labelW, labelH);
-
-  // 4. Grid (only when spacing is visible enough)
+  // 3. Grid over the work area (only when spacing is visible enough).
   if (s.gridEnabled && mmToPx(s.gridSpacing, s.zoom) >= 5) {
+    const bedRight = bedX0 + s.profile.workAreaX;
+    const bedTopMm = bedY1 - s.profile.workAreaY;
     ctx.save();
     ctx.beginPath();
-    ctx.rect(labelTL.x, labelTL.y, labelW, labelH);
+    ctx.rect(bedTopLeft.x, bedTopLeft.y, bedW, bedH);
     ctx.clip();
-    for (let gx = 0; gx <= s.label.width + 1e-9; gx += s.gridSpacing) {
-      const major = Math.abs(gx / (s.gridSpacing * 10) - Math.round(gx / (s.gridSpacing * 10))) < 1e-6;
-      ctx.strokeStyle = major ? t.gridMajor : t.grid;
+    const isMajor = (g: number) =>
+      Math.abs(g / (s.gridSpacing * 10) - Math.round(g / (s.gridSpacing * 10))) < 1e-6;
+    for (let gx = Math.ceil(bedX0 / s.gridSpacing) * s.gridSpacing; gx <= bedRight + 1e-9; gx += s.gridSpacing) {
+      ctx.strokeStyle = isMajor(gx) ? t.gridMajor : t.grid;
       ctx.beginPath();
       const sx = toScreen({ x: gx, y: 0 }).x;
-      ctx.moveTo(sx, labelTL.y);
-      ctx.lineTo(sx, labelTL.y + labelH);
+      ctx.moveTo(sx, bedTopLeft.y);
+      ctx.lineTo(sx, bedTopLeft.y + bedH);
       ctx.stroke();
     }
-    for (let gy = 0; gy <= s.label.height + 1e-9; gy += s.gridSpacing) {
-      const major = Math.abs(gy / (s.gridSpacing * 10) - Math.round(gy / (s.gridSpacing * 10))) < 1e-6;
-      ctx.strokeStyle = major ? t.gridMajor : t.grid;
+    for (let gy = Math.ceil(bedTopMm / s.gridSpacing) * s.gridSpacing; gy <= bedY1 + 1e-9; gy += s.gridSpacing) {
+      ctx.strokeStyle = isMajor(gy) ? t.gridMajor : t.grid;
       ctx.beginPath();
       const sy = toScreen({ x: 0, y: gy }).y;
-      ctx.moveTo(labelTL.x, sy);
-      ctx.lineTo(labelTL.x + labelW, sy);
+      ctx.moveTo(bedTopLeft.x, sy);
+      ctx.lineTo(bedTopLeft.x + bedW, sy);
       ctx.stroke();
     }
     ctx.restore();
@@ -146,7 +145,8 @@ export function render(ctx: CanvasRenderingContext2D, s: RenderState): void {
   for (const el of s.label.elements) {
     if (el.type === 'text' && el.id === s.editingTextId) continue; // textarea overlay replaces it
     ctx.strokeStyle = isCutShape(el) ? t.cut : t.stroke;
-    ctx.lineWidth = Math.max(1, mmToPx(0.2, s.zoom));
+    // Line width reflects the actual bit, so heavier text/shapes look heavier.
+    ctx.lineWidth = Math.max(1, mmToPx(bitWidthMm(resolveBit(s.profile, el.bitId)), s.zoom));
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     for (const stroke of elementStrokes(el)) {
@@ -169,6 +169,30 @@ export function render(ctx: CanvasRenderingContext2D, s: RenderState): void {
   // 6. Selection highlights + handles
   for (const el of s.label.elements) {
     if (!s.selectedIds.includes(el.id)) continue;
+
+    // Lines are shown as the segment itself — no rectangular bounding box.
+    if (isLine(el)) {
+      const handles = lineHandlePositions(el, toScreen);
+      ctx.beginPath();
+      ctx.strokeStyle = t.selection;
+      ctx.lineWidth = 1.5;
+      ctx.moveTo(handles[0].point.x, handles[0].point.y);
+      ctx.lineTo(handles[1].point.x, handles[1].point.y);
+      ctx.stroke();
+      if (s.selectedIds.length === 1 && !el.locked) {
+        for (const h of handles) {
+          ctx.beginPath();
+          ctx.fillStyle = t.handleFill;
+          ctx.strokeStyle = t.selection;
+          ctx.lineWidth = 1;
+          ctx.arc(h.point.x, h.point.y, HANDLE_SIZE_PX / 2, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+        }
+      }
+      continue;
+    }
+
     const bbox = elementBBox(el);
     drawRotatedBox(ctx, bbox, el.rotation, toScreen, t.selection, []);
     if (s.selectedIds.length === 1 && !el.locked) {
