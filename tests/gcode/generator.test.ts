@@ -151,6 +151,21 @@ describe('generateGcode', () => {
     // A single capital "I" is one stroke; one op, not several offset copies.
     expect(ops).toHaveLength(1);
   });
+
+  it('keys machine coordinates to the outermost cut shape, not the label rectangle', () => {
+    // Outline offset inside a larger label; the part is the 30×20 cut shape.
+    const outline = cutRectEl({ id: 'o', x: 10, y: 10, width: 30, height: 20 });
+    const label = makeLabel([outline, textEl({ x: 15, y: 15 })]);
+    const { ops } = generateGcode({ label, profile, originX: 0, originY: 0 });
+    const cutOp = ops.find((o) => o.depth === profile.materialThickness)!;
+    const xs = cutOp.points.map((p) => p.x);
+    const ys = cutOp.points.map((p) => p.y);
+    // The outline maps to the bed origin regardless of its label-space offset.
+    expect(Math.min(...xs)).toBeCloseTo(0);
+    expect(Math.max(...xs)).toBeCloseTo(30);
+    expect(Math.min(...ys)).toBeCloseTo(0);
+    expect(Math.max(...ys)).toBeCloseTo(20);
+  });
 });
 
 describe('validateJob', () => {

@@ -7,6 +7,7 @@ import { elementAtPoint, elementBBox, elementsInRect, resizeBBox, rotationFromPo
 import { handlePositions, lineHandlePositions, hitTestHandles, cursorForHandle, type HandleId } from './handles';
 import { snapToGrid, computeAlignmentSnap, type AlignmentGuide } from './snapping';
 import { isLine, lineEndpoints, lineBoxFromEndpoints } from '../elements/line';
+import { partBBox } from '../gcode/toolpath';
 import { mmToPx, pxToMm } from '../utils/units';
 import { bboxCentre, bboxContains, clamp, rotateAround, type BBox, type Vec2 } from '../utils/geometry';
 import { MIN_ZOOM, MAX_ZOOM } from '../store/uiSlice';
@@ -77,14 +78,15 @@ export function CanvasView() {
     const s = useStore.getState();
     const rect = canvas.getBoundingClientRect();
     const margin = 60;
-    const zw = (rect.width - margin * 2) / mmToPx(s.project.label.width, 1);
-    const zh = (rect.height - margin * 2) / mmToPx(s.project.label.height, 1);
+    // Fit the part (outermost cut shape) — that is what you design against.
+    const part = partBBox(s.project.label);
+    const zw = (rect.width - margin * 2) / mmToPx(part.width, 1);
+    const zh = (rect.height - margin * 2) / mmToPx(part.height, 1);
     const z = clamp(Math.min(zw, zh), MIN_ZOOM, MAX_ZOOM);
     s.setZoom(z);
-    s.setPan(
-      (rect.width - mmToPx(s.project.label.width, z)) / 2,
-      (rect.height - mmToPx(s.project.label.height, z)) / 2,
-    );
+    const cx = part.x + part.width / 2;
+    const cy = part.y + part.height / 2;
+    s.setPan(rect.width / 2 - mmToPx(cx, z), rect.height / 2 - mmToPx(cy, z));
   }, []);
 
   // Initial fit + external "fit" requests (toolbar / menu / shortcut).
@@ -292,7 +294,7 @@ export function CanvasView() {
           const others = s.project.label.elements
             .filter((el) => !d.ids.includes(el.id))
             .map(elementBBox);
-          others.push({ x: 0, y: 0, width: s.project.label.width, height: s.project.label.height });
+          others.push(partBBox(s.project.label));
           const snap = computeAlignmentSnap(draggedBBox, others, pxToMm(3, s.zoom));
           dx += snap.dx;
           dy += snap.dy;
@@ -499,9 +501,11 @@ export function CanvasView() {
       const profile = selectActiveProfile(s);
       const label = s.project.label;
       const outOfBoundsIds = new Set<string>();
-      const labelBox: BBox = { x: 0, y: 0, width: label.width, height: label.height };
+      // Engraving belongs on the part; flag anything outside the outermost cut
+      // shape. The outline itself spans the part exactly, so it never flags.
+      const part = partBBox(label);
       for (const el of label.elements) {
-        if (!bboxContains(labelBox, elementBBox(el))) outOfBoundsIds.add(el.id);
+        if (!bboxContains(part, elementBBox(el))) outOfBoundsIds.add(el.id);
       }
       const state: RenderState = {
         width,
