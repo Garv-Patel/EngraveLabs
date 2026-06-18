@@ -18,6 +18,14 @@ export interface TextElement extends BaseElement {
   lineSpacing: number; // mm between lines
   align: 'left' | 'centre' | 'right';
   engraveDepth: number | null; // null = use machine profile default
+  /**
+   * Target engraved stroke width in mm. Undefined/0 = hairline (a single
+   * bit-width centreline pass). Anything wider than the bit is filled with
+   * overlapping passes so the stroke comes out solid.
+   */
+  thickness?: number;
+  /** When true, thickness tracks font size (≈12% of cap height) instead. */
+  thicknessAuto?: boolean;
 }
 
 export interface SymbolElement extends BaseElement {

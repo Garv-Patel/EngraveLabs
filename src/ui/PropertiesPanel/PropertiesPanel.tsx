@@ -3,6 +3,7 @@ import type { Element, TextElement, SymbolElement, ShapeElement, ShapeKind } fro
 import { listFonts } from '../../fonts/fontRegistry';
 import { listSymbols } from '../../symbols/symbolRegistry';
 import { profileBits, resolveBit, bitLabel } from '../../machineProfiles/bits';
+import { textThicknessTargetMm } from '../../elements/TextElement';
 import { isLine, lineEndpoints, lineBoxFromEndpoints } from '../../elements/line';
 import { NumberField } from '../common/NumberField';
 import { alignSelection, distributeSelection, type AlignAction } from './alignment';
@@ -150,6 +151,24 @@ function TextProps({ el }: { el: TextElement }) {
         />
       </div>
       <BitField el={el} />
+      <div className={styles.row}>
+        <NumberField
+          label="Stroke thickness"
+          value={el.thicknessAuto ? textThicknessTargetMm(el) : el.thickness ?? 0}
+          min={0}
+          disabled={el.thicknessAuto}
+          onChange={(v) => update(el.id, { thickness: v })}
+        />
+      </div>
+      <label className={styles.check}>
+        <input
+          type="checkbox"
+          checked={!!el.thicknessAuto}
+          onChange={(e) => update(el.id, { thicknessAuto: e.target.checked })}
+        />
+        Thickness proportional to font size
+      </label>
+      <div className={styles.note}>0 = hairline (single bit-width pass). Wider strokes are filled with the bit.</div>
       <div className={styles.field}>
         <span className={styles.fieldLabel}>Alignment</span>
         <div className={styles.btnRow}>

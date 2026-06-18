@@ -1,9 +1,10 @@
 import type { Element, Label, ShapeElement } from '../elements/types';
 import type { MachineProfile } from '../machineProfiles/types';
-import { textElementStrokes } from '../elements/TextElement';
+import { textElementStrokes, effectiveTextThicknessMm } from '../elements/TextElement';
 import { symbolElementStrokes } from '../elements/SymbolElement';
 import { shapeElementStrokes } from '../elements/ShapeElement';
-import type { Polyline } from '../fonts/strokeRenderer';
+import { widenStroke, type Polyline } from '../fonts/strokeRenderer';
+import { resolveBit } from '../machineProfiles/bits';
 import type { BBox, Vec2 } from '../utils/geometry';
 
 /** One continuous engraving path at a single depth, in machine coordinates (y-up). */
@@ -70,6 +71,22 @@ export function elementStrokes(el: Element): Polyline[] {
   }
 }
 
+/**
+ * Strokes actually machined for an element, accounting for the bit. Thick text
+ * is filled to its stroke width with overlapping bit passes; everything else is
+ * a single centreline pass.
+ */
+export function engraveStrokes(el: Element, profile: MachineProfile): Polyline[] {
+  if (el.type === 'text') {
+    const d = resolveBit(profile, el.bitId).diameter;
+    const width = effectiveTextThicknessMm(el, d);
+    const centrelines = textElementStrokes(el);
+    if (width <= d) return centrelines;
+    return centrelines.flatMap((s) => widenStroke(s, width, d));
+  }
+  return elementStrokes(el);
+}
+
 function describeElement(el: Element): string {
   switch (el.type) {
     case 'text':
@@ -104,7 +121,7 @@ export function buildToolpath(opts: ToolpathOptions): PathOp[] {
   const ops: PathOp[] = [];
   for (const el of orderElements(label.elements)) {
     const depth = elementDepth(el, profile);
-    elementStrokes(el).forEach((stroke, i) => {
+    engraveStrokes(el, profile).forEach((stroke, i) => {
       if (stroke.length < 2) return;
       ops.push({
         points: stroke.map((p) => partToMachine(p, part, originX, originY)),

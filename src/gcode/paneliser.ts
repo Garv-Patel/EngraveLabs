@@ -2,7 +2,7 @@ import type { Label, ShapeElement } from '../elements/types';
 import type { MachineProfile } from '../machineProfiles/types';
 import { dialects, type GenerateResult } from './generator';
 import { grbl } from './dialects/grbl';
-import { elementDepth, elementStrokes, findOuterCutShape, isCutShape, orderElements, type PathOp } from './toolpath';
+import { elementDepth, engraveStrokes, findOuterCutShape, isCutShape, orderElements, type PathOp } from './toolpath';
 import type { BBox, Vec2 } from '../utils/geometry';
 
 export { findOuterCutShape };
@@ -151,7 +151,7 @@ export function generatePanelGcode(opts: PanelOptions): (GenerateResult & { plan
   cells.forEach((cell, ci) => {
     for (const el of engraveEls) {
       const depth = elementDepth(el, profile);
-      elementStrokes(el).forEach((stroke, i) => {
+      engraveStrokes(el, profile).forEach((stroke, i) => {
         if (stroke.length < 2) return;
         ops.push({
           points: stroke.map((p) => toMachine(p, cell)),
@@ -169,7 +169,7 @@ export function generatePanelGcode(opts: PanelOptions): (GenerateResult & { plan
     cells.forEach((cell, ci) => {
       for (const el of innerCuts) {
         const depth = elementDepth(el, profile);
-        elementStrokes(el).forEach((stroke, i) => {
+        engraveStrokes(el, profile).forEach((stroke, i) => {
           if (stroke.length < 2) return;
           ops.push({
             points: stroke.map((p) => toMachine(p, cell)),
@@ -207,7 +207,7 @@ export function generatePanelGcode(opts: PanelOptions): (GenerateResult & { plan
     cells.forEach((cell, ci) => {
       for (const el of cutEls) {
         const depth = elementDepth(el, profile);
-        elementStrokes(el).forEach((stroke, i) => {
+        engraveStrokes(el, profile).forEach((stroke, i) => {
           if (stroke.length < 2) return;
           ops.push({
             points: stroke.map((p) => toMachine(p, cell)),

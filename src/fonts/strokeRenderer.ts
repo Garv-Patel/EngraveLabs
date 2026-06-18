@@ -1,5 +1,6 @@
 import type { FontDef, Stroke } from './types';
 import type { Vec2 } from '../utils/geometry';
+import { normalize, perp } from '../utils/geometry';
 
 export type Polyline = Vec2[];
 
@@ -66,4 +67,35 @@ export function layoutText(
 /** Scale normalised symbol strokes (0–1 square) to a width × height mm box. */
 export function scaleStrokes(strokes: Stroke[], width: number, height: number): Polyline[] {
   return strokes.map((s) => s.map(([x, y]) => ({ x: x * width, y: y * height })));
+}
+
+/**
+ * Fill a single-line stroke to `totalWidth` mm by machining overlapping passes
+ * with a `toolDiameter` cutter. Passes are spaced ~0.6× the tool diameter so
+ * they overlap and clear the band cleanly (no gaps); the result is a solid
+ * stroke `totalWidth` wide. Returns the original stroke when the requested
+ * width is no wider than the tool (a single centreline pass).
+ */
+export function widenStroke(stroke: Polyline, totalWidth: number, toolDiameter: number): Polyline[] {
+  if (stroke.length < 2 || totalWidth <= toolDiameter) return [stroke];
+  const band = (totalWidth - toolDiameter) / 2; // furthest offset from the centreline
+  const stepover = Math.max(0.01, toolDiameter * 0.6);
+  const half = Math.max(1, Math.ceil(band / stepover));
+
+  // Per-vertex offset directions: average of adjacent segment normals.
+  const normals: Vec2[] = stroke.map((_, i) => {
+    const prev = stroke[Math.max(0, i - 1)];
+    const next = stroke[Math.min(stroke.length - 1, i + 1)];
+    return normalize(perp({ x: next.x - prev.x, y: next.y - prev.y }));
+  });
+
+  // Centreline first, then walk outwards symmetrically.
+  const passes: Polyline[] = [stroke];
+  for (let k = 1; k <= half; k++) {
+    const offset = (k / half) * band;
+    for (const sign of [1, -1]) {
+      passes.push(stroke.map((p, i) => ({ x: p.x + normals[i].x * offset * sign, y: p.y + normals[i].y * offset * sign })));
+    }
+  }
+  return passes;
 }

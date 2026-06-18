@@ -3,6 +3,23 @@ import { getFont } from '../fonts/fontRegistry';
 import { layoutText, type Polyline } from '../fonts/strokeRenderer';
 import { rotateAround, type Vec2 } from '../utils/geometry';
 
+/** Stroke width as a fraction of cap height when "proportional" is on. */
+export const TEXT_THICKNESS_RATIO = 0.12;
+
+type ThicknessInput = Pick<TextElement, 'fontSize' | 'thickness' | 'thicknessAuto'>;
+
+/** The requested stroke width in mm (0 = hairline), before clamping to the bit. */
+export function textThicknessTargetMm(el: ThicknessInput): number {
+  if (el.thicknessAuto) return el.fontSize * TEXT_THICKNESS_RATIO;
+  return el.thickness ?? 0;
+}
+
+/** Actual engraved stroke width: never thinner than the bit that cuts it. */
+export function effectiveTextThicknessMm(el: ThicknessInput, toolDiameter: number): number {
+  const target = textThicknessTargetMm(el);
+  return target > toolDiameter ? target : toolDiameter;
+}
+
 /** Natural (unrotated) rendered size of a text element in mm. */
 export function measureTextElement(el: Pick<TextElement, 'text' | 'fontName' | 'fontSize' | 'lineSpacing' | 'align'>): {
   width: number;
