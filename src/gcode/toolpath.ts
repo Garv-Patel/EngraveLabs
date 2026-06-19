@@ -4,7 +4,7 @@ import { textElementStrokes } from '../elements/TextElement';
 import { symbolElementStrokes } from '../elements/SymbolElement';
 import { shapeElementStrokes } from '../elements/ShapeElement';
 import type { Polyline } from '../fonts/strokeRenderer';
-import type { BBox, Vec2 } from '../utils/geometry';
+import { distance, type BBox, type Vec2 } from '../utils/geometry';
 
 /** One continuous engraving path at a single depth, in machine coordinates (y-up). */
 export interface PathOp {
@@ -97,21 +97,143 @@ export function orderElements(elements: Element[]): Element[] {
   return [...texts, ...symbols, ...engraveShapes, ...cutShapes];
 }
 
-/** Build the full job toolpath with engraving-first ordering. */
+/** A polyline is closed when its last point coincides with its first. */
+const CLOSED_EPS = 1e-6;
+function isClosedPath(points: Vec2[]): boolean {
+  return points.length >= 3 && distance(points[0], points[points.length - 1]) <= CLOSED_EPS;
+}
+
+/** Rotate a closed polyline so it begins (and ends) at the vertex nearest `from`. */
+function rotateClosedToNearest(points: Vec2[], from: Vec2): Vec2[] {
+  const n = points.length - 1; // last vertex duplicates the first
+  let best = 0;
+  let bestD = Infinity;
+  for (let i = 0; i < n; i++) {
+    const d = distance(points[i], from);
+    if (d < bestD) {
+      bestD = d;
+      best = i;
+    }
+  }
+  if (best === 0) return points;
+  const out: Vec2[] = [];
+  for (let i = 0; i <= n; i++) out.push(points[(best + i) % n]);
+  return out;
+}
+
+/**
+ * The cheapest way to enter a path from the current tool position: open paths
+ * may be reversed to start from whichever end is closer; closed loops are
+ * rotated to start at their nearest vertex. The engraved geometry is identical
+ * either way — only the rapid hop and the plunge point change.
+ */
+function entryFor(op: PathOp, from: Vec2): { dist: number; points: Vec2[] } {
+  const pts = op.points;
+  if (isClosedPath(pts)) {
+    const rotated = rotateClosedToNearest(pts, from);
+    return { dist: distance(from, rotated[0]), points: rotated };
+  }
+  const dStart = distance(from, pts[0]);
+  const dEnd = distance(from, pts[pts.length - 1]);
+  if (dEnd < dStart) return { dist: dEnd, points: pts.slice().reverse() };
+  return { dist: dStart, points: pts };
+}
+
+const endOf = (points: Vec2[]): Vec2 => points[points.length - 1];
+
+/**
+ * Greedy nearest-neighbour reorder of a set of engraving ops to minimise the
+ * rapid (G0) travel that joins them. At each step it picks the unvisited path
+ * whose nearest entry point is closest to the tool, orienting that path for the
+ * shortest approach. This is the dominant cost in label engraving — hundreds of
+ * short strokes were previously machined in arbitrary renderer order.
+ */
+export function optimizeTravel(ops: PathOp[], start: Vec2): { ops: PathOp[]; end: Vec2 } {
+  const remaining = ops.slice();
+  const result: PathOp[] = [];
+  let cur = start;
+  while (remaining.length > 0) {
+    let bestIdx = 0;
+    let bestEntry = entryFor(remaining[0], cur);
+    for (let i = 1; i < remaining.length; i++) {
+      const entry = entryFor(remaining[i], cur);
+      if (entry.dist < bestEntry.dist) {
+        bestIdx = i;
+        bestEntry = entry;
+      }
+    }
+    const [picked] = remaining.splice(bestIdx, 1);
+    result.push({ ...picked, points: bestEntry.points });
+    cur = endOf(bestEntry.points);
+  }
+  return { ops: result, end: cur };
+}
+
+/**
+ * Keep the ops in their given order (used where the order carries meaning, e.g.
+ * cut shapes must release inner cutouts before the outermost outline) but still
+ * orient each path for the shortest entry from the previous one.
+ */
+function orientInOrder(ops: PathOp[], start: Vec2): { ops: PathOp[]; end: Vec2 } {
+  const result: PathOp[] = [];
+  let cur = start;
+  for (const op of ops) {
+    const entry = entryFor(op, cur);
+    result.push({ ...op, points: entry.points });
+    cur = endOf(entry.points);
+  }
+  return { ops: result, end: cur };
+}
+
+/**
+ * Build the full job toolpath. Machining phases keep their engraving-first
+ * order (text → symbols → engrave shapes → cuts), but within each phase the
+ * paths are reordered and oriented to minimise rapid travel, and successive
+ * phases chain from where the previous one finished. Cut shapes keep their
+ * area-sorted order for correctness and are only re-oriented, never reordered.
+ */
 export function buildToolpath(opts: ToolpathOptions): PathOp[] {
   const { label, profile, originX, originY } = opts;
   const part = partBBox(label);
-  const ops: PathOp[] = [];
-  for (const el of orderElements(label.elements)) {
+  const ordered = orderElements(label.elements);
+
+  const opsFor = (el: Element): PathOp[] => {
     const depth = elementDepth(el, profile);
+    const out: PathOp[] = [];
     elementStrokes(el).forEach((stroke, i) => {
       if (stroke.length < 2) return;
-      ops.push({
+      out.push({
         points: stroke.map((p) => partToMachine(p, part, originX, originY)),
         depth,
         comment: i === 0 ? describeElement(el) : undefined,
       });
     });
+    return out;
+  };
+
+  const collect = (predicate: (el: Element) => boolean): PathOp[] =>
+    ordered.filter(predicate).flatMap(opsFor);
+
+  // Engraving phases may be freely reordered for travel; the cut phase keeps its
+  // area order so inner cutouts release before the part outline.
+  const engravePhases = [
+    collect((e) => e.type === 'text'),
+    collect((e) => e.type === 'symbol'),
+    collect((e) => e.type === 'shape' && e.mode === 'engrave'),
+  ];
+  const cutOps = ordered.filter(isCutShape).flatMap(opsFor);
+
+  const ops: PathOp[] = [];
+  let cur: Vec2 = { x: originX, y: originY };
+  for (const phase of engravePhases) {
+    if (phase.length === 0) continue;
+    const optimized = optimizeTravel(phase, cur);
+    ops.push(...optimized.ops);
+    cur = optimized.end;
+  }
+  if (cutOps.length > 0) {
+    const oriented = orientInOrder(cutOps, cur);
+    ops.push(...oriented.ops);
   }
   return ops;
 }
