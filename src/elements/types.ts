@@ -18,6 +18,12 @@ export interface TextElement extends BaseElement {
   lineSpacing: number; // mm between lines
   align: 'left' | 'centre' | 'right';
   engraveDepth: number | null; // null = use machine profile default
+  /**
+   * Bold emphasis. Engraves the centreline plus parallel fill passes to thicken
+   * the stroke with the same bit — no tool change. Opt-in per element, so normal
+   * text stays single-pass (width comes from the bit).
+   */
+  bold?: boolean;
 }
 
 export interface SymbolElement extends BaseElement {

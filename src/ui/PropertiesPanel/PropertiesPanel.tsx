@@ -151,6 +151,20 @@ function TextProps({ el }: { el: TextElement }) {
       </div>
       <BitField el={el} />
       <div className={styles.field}>
+        <span className={styles.fieldLabel}>Weight</span>
+        <div className={styles.btnRow}>
+          {([['normal', false], ['bold', true]] as const).map(([label, value]) => (
+            <button
+              key={label}
+              className={`${styles.segBtn} ${!!el.bold === value ? styles.active : ''}`}
+              onClick={() => update(el.id, { bold: value })}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className={styles.field}>
         <span className={styles.fieldLabel}>Alignment</span>
         <div className={styles.btnRow}>
           {(['left', 'centre', 'right'] as const).map((a) => (

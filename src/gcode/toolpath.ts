@@ -1,9 +1,11 @@
-import type { Element, Label, ShapeElement } from '../elements/types';
+import type { Element, Label, ShapeElement, TextElement } from '../elements/types';
 import type { MachineProfile } from '../machineProfiles/types';
 import { textElementStrokes } from '../elements/TextElement';
 import { symbolElementStrokes } from '../elements/SymbolElement';
 import { shapeElementStrokes } from '../elements/ShapeElement';
 import type { Polyline } from '../fonts/strokeRenderer';
+import { resolveBit } from '../machineProfiles/bits';
+import { boldStrokeWidth, fillStroke } from './fill';
 import { distance, type BBox, type Vec2 } from '../utils/geometry';
 
 /** One continuous engraving path at a single depth, in machine coordinates (y-up). */
@@ -199,15 +201,24 @@ export function buildToolpath(opts: ToolpathOptions): PathOp[] {
 
   const opsFor = (el: Element): PathOp[] => {
     const depth = elementDepth(el, profile);
+    // Bold text is thickened with a fill pattern: the centreline plus parallel
+    // passes that widen the stroke using the element's own bit — no tool change.
+    const bold = el.type === 'text' && el.bold === true;
+    const bit = bold ? resolveBit(profile, el.bitId) : null;
+    const width = bold ? boldStrokeWidth((el as TextElement).fontSize) : 0;
+
     const out: PathOp[] = [];
-    elementStrokes(el).forEach((stroke, i) => {
-      if (stroke.length < 2) return;
-      out.push({
-        points: stroke.map((p) => partToMachine(p, part, originX, originY)),
-        depth,
-        comment: i === 0 ? describeElement(el) : undefined,
-      });
-    });
+    let first = true;
+    for (const stroke of elementStrokes(el)) {
+      if (stroke.length < 2) continue;
+      const machineStroke = stroke.map((p) => partToMachine(p, part, originX, originY));
+      const passes = bold ? fillStroke(machineStroke, width, bit!.diameter) : [machineStroke];
+      for (const points of passes) {
+        if (points.length < 2) continue;
+        out.push({ points, depth, comment: first ? describeElement(el) : undefined });
+        first = false;
+      }
+    }
     return out;
   };
 
