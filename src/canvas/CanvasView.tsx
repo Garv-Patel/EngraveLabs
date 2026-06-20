@@ -38,6 +38,7 @@ const DEFAULT_TEXT: Omit<TextElement, 'id' | 'x' | 'y'> = {
   lineSpacing: 2,
   align: 'left',
   engraveDepth: null,
+  bold: false,
   bitId: null,
   width: 1,
   height: 1,

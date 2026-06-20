@@ -4,6 +4,7 @@ import type { BBox, Vec2 } from '../utils/geometry';
 import { bboxCentre, degToRad } from '../utils/geometry';
 import { mmToPx } from '../utils/units';
 import { elementStrokes, isCutShape, partBBox } from '../gcode/toolpath';
+import { boldStrokeWidth } from '../gcode/fill';
 import { resolveBit, bitWidthMm } from '../machineProfiles/bits';
 import { isLine } from '../elements/line';
 import { handlePositions, lineHandlePositions, HANDLE_SIZE_PX } from './handles';
@@ -145,8 +146,13 @@ export function render(ctx: CanvasRenderingContext2D, s: RenderState): void {
   for (const el of s.label.elements) {
     if (el.type === 'text' && el.id === s.editingTextId) continue; // textarea overlay replaces it
     ctx.strokeStyle = isCutShape(el) ? t.cut : t.stroke;
-    // Line width reflects the actual bit, so heavier text/shapes look heavier.
-    ctx.lineWidth = Math.max(1, mmToPx(bitWidthMm(resolveBit(s.profile, el.bitId)), s.zoom));
+    // Line width reflects the actual bit, so heavier text/shapes look heavier;
+    // bold text previews at its filled stroke width.
+    const widthMm =
+      el.type === 'text' && el.bold
+        ? boldStrokeWidth(el.fontSize)
+        : bitWidthMm(resolveBit(s.profile, el.bitId));
+    ctx.lineWidth = Math.max(1, mmToPx(widthMm, s.zoom));
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     for (const stroke of elementStrokes(el)) {
