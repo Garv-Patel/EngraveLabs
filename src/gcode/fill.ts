@@ -1,13 +1,25 @@
 import { add, distance, normalize, perp, scale, sub, type Vec2 } from '../utils/geometry';
 
-/** Bold stroke width as a fraction of the text cap height. */
-export const BOLD_STROKE_RATIO = 0.16;
-/** Floor so small text still reads as bold rather than hairline. */
-export const MIN_BOLD_WIDTH_MM = 0.6;
+/** Stepover fraction of the bit diameter between adjacent fill passes. */
+export const FILL_STEPOVER_RATIO = 0.8;
 
-/** Target engraved width (mm) of a bold stroke for the given cap height. */
-export function boldStrokeWidth(fontSize: number): number {
-  return Math.max(MIN_BOLD_WIDTH_MM, fontSize * BOLD_STROKE_RATIO);
+/**
+ * Default "just visible" bold width (mm) for a given bit: the bit's own pass
+ * plus one stepover either side, i.e. exactly one fill pass per side of the
+ * centreline. Enough to read as bold without piling on redundant passes.
+ */
+export function defaultBoldWidth(bitDiameter: number): number {
+  return bitDiameter + 2 * bitDiameter * FILL_STEPOVER_RATIO;
+}
+
+/**
+ * Target engraved width (mm) of a bold stroke. Uses the per-element `override`
+ * when set (never narrower than a single bit pass), else the bit's default
+ * just-visible bold width.
+ */
+export function boldStrokeWidth(bitDiameter: number, override?: number | null): number {
+  if (override != null && override > 0) return Math.max(override, bitDiameter);
+  return defaultBoldWidth(bitDiameter);
 }
 
 const CLOSED_EPS = 1e-6;
@@ -73,7 +85,7 @@ export function fillStroke(centreline: Vec2[], strokeWidth: number, bitDiameter:
   const reach = strokeWidth / 2 - bitDiameter / 2;
   if (reach <= 1e-4 || centreline.length < 2) return passes;
 
-  const stepover = Math.max(bitDiameter * 0.8, 1e-3); // overlap passes to avoid gaps
+  const stepover = Math.max(bitDiameter * FILL_STEPOVER_RATIO, 1e-3); // overlap passes to avoid gaps
   const count = Math.ceil(reach / stepover);
   const step = reach / count; // even spacing out to the edge
   for (let k = 1; k <= count; k++) {

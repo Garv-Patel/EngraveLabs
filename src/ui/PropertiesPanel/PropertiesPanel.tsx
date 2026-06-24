@@ -3,6 +3,7 @@ import type { Element, TextElement, SymbolElement, ShapeElement, ShapeKind } fro
 import { listFonts } from '../../fonts/fontRegistry';
 import { listSymbols } from '../../symbols/symbolRegistry';
 import { profileBits, resolveBit, bitLabel } from '../../machineProfiles/bits';
+import { boldStrokeWidth } from '../../gcode/fill';
 import { isLine, lineEndpoints, lineBoxFromEndpoints } from '../../elements/line';
 import { NumberField } from '../common/NumberField';
 import { alignSelection, distributeSelection, type AlignAction } from './alignment';
@@ -97,6 +98,37 @@ function BitFieldMulti({ els }: { els: Element[] }) {
   );
 }
 
+function BoldWidthField({ el }: { el: TextElement }) {
+  const update = useUpdate();
+  const profile = useStore(selectActiveProfile);
+  const bit = resolveBit(profile, el.bitId);
+  const effective = boldStrokeWidth(bit.diameter, el.boldWidth);
+  const useDefault = el.boldWidth == null;
+  return (
+    <>
+      <label className={styles.check}>
+        <input
+          type="checkbox"
+          checked={useDefault}
+          onChange={(e) =>
+            update(el.id, { boldWidth: e.target.checked ? null : Math.round(effective * 100) / 100 })
+          }
+        />
+        Default bold width
+      </label>
+      {!useDefault && (
+        <NumberField
+          label="Bold width"
+          value={el.boldWidth ?? effective}
+          min={bit.diameter}
+          step={0.05}
+          onChange={(v) => update(el.id, { boldWidth: v })}
+        />
+      )}
+    </>
+  );
+}
+
 function DepthField({ el }: { el: Element }) {
   const update = useUpdate();
   const useDefault = el.engraveDepth === null;
@@ -164,6 +196,7 @@ function TextProps({ el }: { el: TextElement }) {
           ))}
         </div>
       </div>
+      {el.bold && <BoldWidthField el={el} />}
       <div className={styles.field}>
         <span className={styles.fieldLabel}>Alignment</span>
         <div className={styles.btnRow}>

@@ -1,8 +1,17 @@
 import type { Label, ShapeElement } from '../elements/types';
 import type { MachineProfile } from '../machineProfiles/types';
-import { dialects, type GenerateResult } from './generator';
+import { assembleProgram, dialects, fmt, type GenerateResult, type ProgramContext } from './generator';
 import { grbl } from './dialects/grbl';
-import { elementDepth, elementStrokes, findOuterCutShape, isCutShape, orderElements, type PathOp } from './toolpath';
+import {
+  elementDepth,
+  elementStrokes,
+  findOuterCutShape,
+  isCutShape,
+  orderElements,
+  resolveBoldFill,
+  strokePasses,
+  type PathOp,
+} from './toolpath';
 import type { BBox, Vec2 } from '../utils/geometry';
 
 export { findOuterCutShape };
@@ -116,11 +125,6 @@ export function planPanel(label: Label, sheetW: number, sheetH: number): PanelPl
   return { strategy, tileW, tileH, ...layout, count: layout.cells.length, outerShape: outer };
 }
 
-const fmt = (n: number) => {
-  const r = Math.round(n * 1000) / 1000;
-  return Object.is(r, -0) ? '0' : String(r);
-};
-
 /**
  * Generate a panelised job: every cell's engraving first, then all cuts.
  * Cut order per cell: inner cut shapes (small → large), outer outline last.
@@ -147,17 +151,21 @@ export function generatePanelGcode(opts: PanelOptions): (GenerateResult & { plan
 
   const ops: PathOp[] = [];
 
-  // 1. All engraving, cell by cell.
+  // 1. All engraving, cell by cell. Bold text is thickened with the same fill
+  //    passes the single-label generator uses, so weight survives panelisation.
   cells.forEach((cell, ci) => {
     for (const el of engraveEls) {
       const depth = elementDepth(el, profile);
-      elementStrokes(el).forEach((stroke, i) => {
+      const bold = resolveBoldFill(el, profile);
+      let first = true;
+      elementStrokes(el).forEach((stroke) => {
         if (stroke.length < 2) return;
-        ops.push({
-          points: stroke.map((p) => toMachine(p, cell)),
-          depth,
-          comment: i === 0 ? `cell ${ci + 1}: engrave` : undefined,
-        });
+        const machineStroke = stroke.map((p) => toMachine(p, cell));
+        for (const points of strokePasses(machineStroke, bold)) {
+          if (points.length < 2) continue;
+          ops.push({ points, depth, comment: first ? `cell ${ci + 1}: engrave` : undefined });
+          first = false;
+        }
       });
     }
   });
@@ -174,6 +182,7 @@ export function generatePanelGcode(opts: PanelOptions): (GenerateResult & { plan
           ops.push({
             points: stroke.map((p) => toMachine(p, cell)),
             depth,
+            cut: true,
             comment: i === 0 ? `cell ${ci + 1}: inner cut` : undefined,
           });
         });
@@ -190,6 +199,7 @@ export function generatePanelGcode(opts: PanelOptions): (GenerateResult & { plan
           { x: originX + c * tileW, y: originY + panelH },
         ],
         depth,
+        cut: true,
         comment: c === 0 ? 'shared grid cuts (vertical)' : undefined,
       });
     }
@@ -200,6 +210,7 @@ export function generatePanelGcode(opts: PanelOptions): (GenerateResult & { plan
           { x: originX + panelW, y: originY + r * tileH },
         ],
         depth,
+        cut: true,
         comment: r === 0 ? 'shared grid cuts (horizontal)' : undefined,
       });
     }
@@ -212,6 +223,7 @@ export function generatePanelGcode(opts: PanelOptions): (GenerateResult & { plan
           ops.push({
             points: stroke.map((p) => toMachine(p, cell)),
             depth,
+            cut: true,
             comment: i === 0 ? `cell ${ci + 1}: cut ${el.shapeKind}` : undefined,
           });
         });
@@ -219,35 +231,16 @@ export function generatePanelGcode(opts: PanelOptions): (GenerateResult & { plan
     });
   }
 
-  // Assemble the program (same framing as the single-label generator).
+  // Assemble through the shared program builder so a panel machines with the
+  // exact same motion (and retract logic) as a single label.
   const dialect = dialects[profile.gcodeDialect] ?? grbl;
-  const c = dialect.comment;
-  const ctx = { profile, projectName: opts.projectName ?? label.name };
-  const lines: string[] = [];
-  lines.push(c(`EngraveLab panel - ${ctx.projectName}`));
-  lines.push(
-    c(
-      `${plan.count} tiles (${plan.tileW} x ${plan.tileH} mm, ${plan.strategy}) on ${opts.sheetW} x ${opts.sheetH} mm sheet at X${fmt(originX)} Y${fmt(originY)}`,
-    ),
-  );
-  lines.push(c(`Machine: ${profile.name} (${dialect.name})`));
-  lines.push(c('All engraving first, all cuts last'));
-  lines.push(...dialect.header(ctx));
-  lines.push(`G0 Z${fmt(profile.safeZ)}`);
-  lines.push(`${profile.spindleOnCmd} S${fmt(profile.spindleSpeed)}`);
-  lines.push(`F${fmt(profile.defaultFeedrate)}`);
-  for (const op of ops) {
-    if (op.comment) lines.push(c(op.comment));
-    const [first, ...rest] = op.points;
-    lines.push(`G0 X${fmt(first.x)} Y${fmt(first.y)}`);
-    lines.push(`G1 Z${fmt(-op.depth)} F${fmt(profile.defaultPlungeRate)}`);
-    for (const p of rest) lines.push(`G1 X${fmt(p.x)} Y${fmt(p.y)} F${fmt(profile.defaultFeedrate)}`);
-    lines.push(`G0 Z${fmt(profile.safeZ)}`);
-  }
-  lines.push(`G0 Z${fmt(profile.safeZ)}`);
-  lines.push(`G0 X${fmt(profile.homeX)} Y${fmt(profile.homeY)}`);
-  lines.push(profile.spindleOffCmd);
-  lines.push(...dialect.footer(ctx));
+  const ctx: ProgramContext = { profile, projectName: opts.projectName ?? label.name };
+  const gcode = assembleProgram(ops, profile, ctx, [
+    `EngraveLab panel - ${ctx.projectName}`,
+    `${plan.count} tiles (${plan.tileW} x ${plan.tileH} mm, ${plan.strategy}) on ${opts.sheetW} x ${opts.sheetH} mm sheet at X${fmt(originX)} Y${fmt(originY)}`,
+    `Machine: ${profile.name} (${dialect.name})`,
+    'All engraving first, all cuts last',
+  ]);
 
-  return { gcode: lines.join('\n') + '\n', ops, plan };
+  return { gcode, ops, plan };
 }

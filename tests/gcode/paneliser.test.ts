@@ -147,6 +147,36 @@ describe('generatePanelGcode', () => {
     expect(cutOps).toHaveLength(4); // one rounded outline per cell
   });
 
+  it('thickens bold text in every cell, just like a single label', () => {
+    const opts = { profile, sheetW: 200, sheetH: 100, originX: 0, originY: 0 } as const;
+    const normal = generatePanelGcode({ label: makeLabel([shape(), textEl()]), ...opts })!;
+    const boldText = { ...textEl(), bold: true } as TextElement;
+    const bold = generatePanelGcode({ label: makeLabel([shape(), boldText]), ...opts })!;
+    const engrave = (r: typeof normal) => r.ops.filter((o) => o.depth === profile.engraveDepth).length;
+    // Bold adds fill passes per cell, so the panel has strictly more engrave ops.
+    expect(engrave(bold)).toBeGreaterThan(engrave(normal));
+  });
+
+  it('slides between engraving strokes and only retracts for cuts, like a single label', () => {
+    const result = generatePanelGcode({
+      label: makeLabel([shape(), textEl()]),
+      profile,
+      sheetW: 200,
+      sheetH: 100,
+      originX: 0,
+      originY: 0,
+    })!;
+    const lines = result.gcode.split('\n');
+    const safeZ = lines.filter((l) => l === `G0 Z${profile.safeZ}`).length;
+    const cutPlunges = lines.filter((l) => l.startsWith(`G1 Z-${profile.materialThickness} `)).length;
+    // 2×2 shared grid → 3 + 3 = 6 guillotine cuts, each retracts and replunges.
+    expect(cutPlunges).toBe(6);
+    // Far fewer retracts than ops: engraving no longer lifts after every stroke.
+    expect(safeZ).toBeLessThan(result.ops.length);
+    // Engraving across all cells shares a single plunge run (1), plus 6 cut plunges.
+    expect(lines.filter((l) => l.startsWith('G1 Z-')).length).toBe(1 + 6);
+  });
+
   it('offsets engraving relative to the outer shape and sheet origin', () => {
     const result = generatePanelGcode({
       label: makeLabel([shape(), textEl()]),

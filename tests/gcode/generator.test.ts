@@ -152,6 +152,38 @@ describe('generateGcode', () => {
     expect(ops).toHaveLength(1);
   });
 
+  it('stays at depth between engraving strokes instead of retracting after each', () => {
+    // Multi-stroke text yields many same-depth engraving ops in one run.
+    const { gcode, ops } = generateGcode({
+      label: makeLabel([textEl({ text: 'HELLO' })]),
+      profile,
+      originX: 0,
+      originY: 0,
+    });
+    const engraveOps = ops.length;
+    const safeZMoves = gcode.split('\n').filter((l) => l === `G0 Z${profile.safeZ}`).length;
+    // One per-op retract would mean >= engraveOps lifts; now there is just the
+    // single plunge for the run plus the final retract, far fewer than the ops.
+    expect(engraveOps).toBeGreaterThan(2);
+    expect(safeZMoves).toBeLessThan(engraveOps);
+    // The header/plunge G0 Z appears once and there is exactly one final retract.
+    const plunges = gcode.split('\n').filter((l) => l.startsWith('G1 Z-')).length;
+    expect(plunges).toBe(1);
+  });
+
+  it('still lifts to safe Z before a through-cut so it never drags across stock', () => {
+    const inner = cutRectEl({ id: 'inner', x: 40, y: 20, width: 10, height: 10 });
+    const label = makeLabel([cutRectEl(), inner, textEl()]);
+    const { gcode } = generateGcode({ label, profile, originX: 0, originY: 0 });
+    const lines = gcode.split('\n');
+    // Each cut op (full thickness) is preceded by a retract + plunge to depth.
+    const cutPlunges = lines.filter((l) => l.startsWith(`G1 Z-${profile.materialThickness} `)).length;
+    const safeZMoves = lines.filter((l) => l === `G0 Z${profile.safeZ}`).length;
+    expect(cutPlunges).toBe(2); // inner cutout + outline
+    // At least one retract per cut entry, plus the final retract.
+    expect(safeZMoves).toBeGreaterThanOrEqual(cutPlunges);
+  });
+
   it('keys machine coordinates to the outermost cut shape, not the label rectangle', () => {
     // Outline offset inside a larger label; the part is the 30×20 cut shape.
     const outline = cutRectEl({ id: 'o', x: 10, y: 10, width: 30, height: 20 });

@@ -150,7 +150,7 @@ export function render(ctx: CanvasRenderingContext2D, s: RenderState): void {
     // bold text previews at its filled stroke width.
     const widthMm =
       el.type === 'text' && el.bold
-        ? boldStrokeWidth(el.fontSize)
+        ? boldStrokeWidth(resolveBit(s.profile, el.bitId).diameter, el.boldWidth)
         : bitWidthMm(resolveBit(s.profile, el.bitId));
     ctx.lineWidth = Math.max(1, mmToPx(widthMm, s.zoom));
     ctx.lineCap = 'round';

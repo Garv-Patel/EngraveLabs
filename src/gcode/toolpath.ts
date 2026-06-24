@@ -1,4 +1,4 @@
-import type { Element, Label, ShapeElement, TextElement } from '../elements/types';
+import type { Element, Label, ShapeElement } from '../elements/types';
 import type { MachineProfile } from '../machineProfiles/types';
 import { textElementStrokes } from '../elements/TextElement';
 import { symbolElementStrokes } from '../elements/SymbolElement';
@@ -13,6 +13,21 @@ export interface PathOp {
   points: Vec2[];
   depth: number; // mm below material surface (positive value)
   comment?: string;
+  /** True for through-cut passes, which must clear the stock to reposition. */
+  cut?: boolean;
+}
+
+/**
+ * Whether the tool must lift clear to safe Z before machining `op`, given the
+ * op machined just before it (null when `op` is the first). Unlike a laser, this
+ * CNC keeps the spindle running and slides straight from one engraving stroke to
+ * the next at depth — no retract needed. It only lifts when repositioning would
+ * otherwise drag through stock unsafely: a through-cut, a move to or from one, or
+ * a change in depth that needs the tool re-plunged.
+ */
+export function needsRetract(op: PathOp, prev: PathOp | null): boolean {
+  if (!prev) return true;
+  return Boolean(op.cut) || Boolean(prev.cut) || op.depth !== prev.depth;
 }
 
 export interface ToolpathOptions {
@@ -59,6 +74,34 @@ export function elementDepth(el: Element, profile: MachineProfile): number {
     return el.engraveDepth ?? profile.materialThickness;
   }
   return el.engraveDepth ?? profile.engraveDepth;
+}
+
+/** Resolved bold-fill settings for an element, or null when it is not bold text. */
+export interface BoldFill {
+  /** Target engraved stroke width, mm. */
+  width: number;
+  /** Diameter of the element's bit, mm. */
+  bitDiameter: number;
+}
+
+/**
+ * Bold-fill settings for an element, honouring its per-element width override,
+ * or null for anything that isn't bold text. Shared by the single-label and
+ * panelised generators so bold thickening behaves identically in both.
+ */
+export function resolveBoldFill(el: Element, profile: MachineProfile): BoldFill | null {
+  if (el.type !== 'text' || el.bold !== true) return null;
+  const bit = resolveBit(profile, el.bitId);
+  return { width: boldStrokeWidth(bit.diameter, el.boldWidth), bitDiameter: bit.diameter };
+}
+
+/**
+ * Expand one machine-space stroke into the passes that engrave it: just the
+ * centreline normally, or the centreline plus parallel bold-fill passes when
+ * `bold` is set.
+ */
+export function strokePasses(machineStroke: Vec2[], bold: BoldFill | null): Vec2[][] {
+  return bold ? fillStroke(machineStroke, bold.width, bold.bitDiameter) : [machineStroke];
 }
 
 export function elementStrokes(el: Element): Polyline[] {
@@ -203,19 +246,17 @@ export function buildToolpath(opts: ToolpathOptions): PathOp[] {
     const depth = elementDepth(el, profile);
     // Bold text is thickened with a fill pattern: the centreline plus parallel
     // passes that widen the stroke using the element's own bit — no tool change.
-    const bold = el.type === 'text' && el.bold === true;
-    const bit = bold ? resolveBit(profile, el.bitId) : null;
-    const width = bold ? boldStrokeWidth((el as TextElement).fontSize) : 0;
+    const bold = resolveBoldFill(el, profile);
+    const cut = isCutShape(el);
 
     const out: PathOp[] = [];
     let first = true;
     for (const stroke of elementStrokes(el)) {
       if (stroke.length < 2) continue;
       const machineStroke = stroke.map((p) => partToMachine(p, part, originX, originY));
-      const passes = bold ? fillStroke(machineStroke, width, bit!.diameter) : [machineStroke];
-      for (const points of passes) {
+      for (const points of strokePasses(machineStroke, bold)) {
         if (points.length < 2) continue;
-        out.push({ points, depth, comment: first ? describeElement(el) : undefined });
+        out.push({ points, depth, cut, comment: first ? describeElement(el) : undefined });
         first = false;
       }
     }

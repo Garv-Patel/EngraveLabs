@@ -4,7 +4,7 @@ import type { DialectDef } from './dialects/types';
 import { grbl } from './dialects/grbl';
 import { mach3 } from './dialects/mach3';
 import { linuxcnc } from './dialects/linuxcnc';
-import { buildToolpath, partBBox, type PathOp } from './toolpath';
+import { buildToolpath, needsRetract, partBBox, type PathOp } from './toolpath';
 
 export const dialects: Record<string, DialectDef> = {
   grbl,
@@ -29,27 +29,37 @@ export interface GenerateResult {
   ops: PathOp[];
 }
 
-const fmt = (n: number) => {
+export const fmt = (n: number) => {
   const r = Math.round(n * 1000) / 1000;
   return Object.is(r, -0) ? '0' : String(r);
 };
 
-export function generateGcode(opts: GenerateOptions): GenerateResult {
-  const { label, profile, originX, originY } = opts;
-  const dialect = dialects[profile.gcodeDialect] ?? grbl;
-  const ctx = { profile, projectName: opts.projectName ?? label.name };
-  const c = dialect.comment;
-  const ops = buildToolpath({ label, profile, originX, originY });
-  const part = partBBox(label);
+export interface ProgramContext {
+  profile: MachineProfile;
+  projectName: string;
+}
 
+/**
+ * Assemble a complete G-code program from a finished toolpath: dialect header,
+ * spindle/feed setup, the engraving moves, and the closing retract/home/footer.
+ * Both the single-label and panelised generators funnel through here so a job
+ * machines identically however it was produced — same motion, same framing.
+ *
+ * `headerComments` are the job-specific description lines (already plain text;
+ * they are wrapped in the dialect's comment syntax here).
+ */
+export function assembleProgram(
+  ops: PathOp[],
+  profile: MachineProfile,
+  ctx: ProgramContext,
+  headerComments: string[],
+): string {
+  const dialect = dialects[profile.gcodeDialect] ?? grbl;
+  const c = dialect.comment;
   const lines: string[] = [];
+
   // 1. Program header
-  lines.push(c(`EngraveLab - ${ctx.projectName}`));
-  lines.push(
-    c(`Part: ${fmt(part.width)} x ${fmt(part.height)} mm (outermost cut) at origin X${fmt(originX)} Y${fmt(originY)}`),
-  );
-  lines.push(c(`Machine: ${profile.name} (${dialect.name})`));
-  lines.push(c('Engraving-first order: text, symbols, engrave shapes, then cut shapes last'));
+  for (const line of headerComments) lines.push(c(line));
   lines.push(...dialect.header(ctx));
 
   // 2. Spindle on, safe Z, feed rate
@@ -57,16 +67,26 @@ export function generateGcode(opts: GenerateOptions): GenerateResult {
   lines.push(`${profile.spindleOnCmd} S${fmt(profile.spindleSpeed)}`);
   lines.push(`F${fmt(profile.defaultFeedrate)}`);
 
-  // 3. Engraving operations (order enforced by buildToolpath)
+  // 3. Engraving operations. The tool stays down and slides from one stroke to
+  //    the next at depth — this is a CNC, not a laser, so the spindle keeps
+  //    running and only lifts to safe Z when repositioning would otherwise drag
+  //    through stock (see needsRetract).
+  let prev: PathOp | null = null;
   for (const op of ops) {
     if (op.comment) lines.push(c(op.comment));
     const [first, ...rest] = op.points;
-    lines.push(`G0 X${fmt(first.x)} Y${fmt(first.y)}`);
-    lines.push(`G1 Z${fmt(-op.depth)} F${fmt(profile.defaultPlungeRate)}`);
+    if (needsRetract(op, prev)) {
+      if (prev) lines.push(`G0 Z${fmt(profile.safeZ)}`);
+      lines.push(`G0 X${fmt(first.x)} Y${fmt(first.y)}`);
+      lines.push(`G1 Z${fmt(-op.depth)} F${fmt(profile.defaultPlungeRate)}`);
+    } else {
+      // Slide to the next stroke at depth instead of retract-rapid-replunge.
+      lines.push(`G1 X${fmt(first.x)} Y${fmt(first.y)} F${fmt(profile.defaultFeedrate)}`);
+    }
     for (const p of rest) {
       lines.push(`G1 X${fmt(p.x)} Y${fmt(p.y)} F${fmt(profile.defaultFeedrate)}`);
     }
-    lines.push(`G0 Z${fmt(profile.safeZ)}`);
+    prev = op;
   }
 
   // 4. Return to safe Z / home, spindle off
@@ -77,7 +97,24 @@ export function generateGcode(opts: GenerateOptions): GenerateResult {
   // 5. Program end
   lines.push(...dialect.footer(ctx));
 
-  return { gcode: lines.join('\n') + '\n', ops };
+  return lines.join('\n') + '\n';
+}
+
+export function generateGcode(opts: GenerateOptions): GenerateResult {
+  const { label, profile, originX, originY } = opts;
+  const dialect = dialects[profile.gcodeDialect] ?? grbl;
+  const ctx: ProgramContext = { profile, projectName: opts.projectName ?? label.name };
+  const ops = buildToolpath({ label, profile, originX, originY });
+  const part = partBBox(label);
+
+  const gcode = assembleProgram(ops, profile, ctx, [
+    `EngraveLab - ${ctx.projectName}`,
+    `Part: ${fmt(part.width)} x ${fmt(part.height)} mm (outermost cut) at origin X${fmt(originX)} Y${fmt(originY)}`,
+    `Machine: ${profile.name} (${dialect.name})`,
+    'Engraving-first order: text, symbols, engrave shapes, then cut shapes last',
+  ]);
+
+  return { gcode, ops };
 }
 
 export type ValidationLevel = 'warning' | 'error';

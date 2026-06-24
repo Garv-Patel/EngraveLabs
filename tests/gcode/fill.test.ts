@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { offsetPolyline, fillStroke, boldStrokeWidth } from '../../src/gcode/fill';
+import { offsetPolyline, fillStroke, boldStrokeWidth, defaultBoldWidth } from '../../src/gcode/fill';
 import { buildToolpath } from '../../src/gcode/toolpath';
+import { resolveBit } from '../../src/machineProfiles/bits';
 import { distanceToSegment, type Vec2 } from '../../src/utils/geometry';
 import type { Label, TextElement } from '../../src/elements/types';
 import type { MachineProfile } from '../../src/machineProfiles/types';
@@ -78,6 +79,26 @@ describe('fillStroke', () => {
   });
 });
 
+describe('boldStrokeWidth', () => {
+  it('defaults to a just-visible bold: exactly one fill pass either side', () => {
+    const bit = 0.2;
+    const passes = fillStroke([{ x: 0, y: 0 }, { x: 10, y: 0 }], defaultBoldWidth(bit), bit);
+    // Centreline + one pass per side = 3 passes, not a thick stack.
+    expect(passes).toHaveLength(3);
+  });
+
+  it('honours a per-element width override and lays more passes when widened', () => {
+    const bit = 0.2;
+    const wide = fillStroke([{ x: 0, y: 0 }, { x: 10, y: 0 }], boldStrokeWidth(bit, 1.2), bit);
+    expect(wide.length).toBeGreaterThan(3);
+  });
+
+  it('never returns a width narrower than a single bit pass', () => {
+    expect(boldStrokeWidth(0.5, 0.1)).toBe(0.5);
+    expect(boldStrokeWidth(0.5, 0)).toBe(defaultBoldWidth(0.5));
+  });
+});
+
 function textEl(overrides: Partial<TextElement> = {}): TextElement {
   return {
     id: 't1',
@@ -120,7 +141,7 @@ describe('bold text in buildToolpath', () => {
       originY: 0,
     });
     const normal = buildToolpath({ label: makeLabel([textEl()]), profile, originX: 0, originY: 0 });
-    const half = boldStrokeWidth(6) / 2;
+    const half = boldStrokeWidth(resolveBit(profile, null).diameter) / 2;
     // Every bold point lies within half the bold width of some centreline segment.
     for (const op of bold) {
       for (const p of op.points) {
