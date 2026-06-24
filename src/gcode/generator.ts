@@ -4,7 +4,7 @@ import type { DialectDef } from './dialects/types';
 import { grbl } from './dialects/grbl';
 import { mach3 } from './dialects/mach3';
 import { linuxcnc } from './dialects/linuxcnc';
-import { buildToolpath, partBBox, type PathOp } from './toolpath';
+import { buildToolpath, needsRetract, partBBox, type PathOp } from './toolpath';
 
 export const dialects: Record<string, DialectDef> = {
   grbl,
@@ -57,16 +57,26 @@ export function generateGcode(opts: GenerateOptions): GenerateResult {
   lines.push(`${profile.spindleOnCmd} S${fmt(profile.spindleSpeed)}`);
   lines.push(`F${fmt(profile.defaultFeedrate)}`);
 
-  // 3. Engraving operations (order enforced by buildToolpath)
+  // 3. Engraving operations (order enforced by buildToolpath). The tool stays
+  //    down and slides from one stroke to the next at engraving depth — this is
+  //    a CNC, not a laser, so the spindle keeps running and only lifts to safe Z
+  //    when repositioning would otherwise drag through stock (see needsRetract).
+  let prev: PathOp | null = null;
   for (const op of ops) {
     if (op.comment) lines.push(c(op.comment));
     const [first, ...rest] = op.points;
-    lines.push(`G0 X${fmt(first.x)} Y${fmt(first.y)}`);
-    lines.push(`G1 Z${fmt(-op.depth)} F${fmt(profile.defaultPlungeRate)}`);
+    if (needsRetract(op, prev)) {
+      if (prev) lines.push(`G0 Z${fmt(profile.safeZ)}`);
+      lines.push(`G0 X${fmt(first.x)} Y${fmt(first.y)}`);
+      lines.push(`G1 Z${fmt(-op.depth)} F${fmt(profile.defaultPlungeRate)}`);
+    } else {
+      // Slide to the next stroke at depth instead of retract-rapid-replunge.
+      lines.push(`G1 X${fmt(first.x)} Y${fmt(first.y)} F${fmt(profile.defaultFeedrate)}`);
+    }
     for (const p of rest) {
       lines.push(`G1 X${fmt(p.x)} Y${fmt(p.y)} F${fmt(profile.defaultFeedrate)}`);
     }
-    lines.push(`G0 Z${fmt(profile.safeZ)}`);
+    prev = op;
   }
 
   // 4. Return to safe Z / home, spindle off

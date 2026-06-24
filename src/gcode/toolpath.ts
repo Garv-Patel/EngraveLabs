@@ -13,6 +13,21 @@ export interface PathOp {
   points: Vec2[];
   depth: number; // mm below material surface (positive value)
   comment?: string;
+  /** True for through-cut passes, which must clear the stock to reposition. */
+  cut?: boolean;
+}
+
+/**
+ * Whether the tool must lift clear to safe Z before machining `op`, given the
+ * op machined just before it (null when `op` is the first). Unlike a laser, this
+ * CNC keeps the spindle running and slides straight from one engraving stroke to
+ * the next at depth — no retract needed. It only lifts when repositioning would
+ * otherwise drag through stock unsafely: a through-cut, a move to or from one, or
+ * a change in depth that needs the tool re-plunged.
+ */
+export function needsRetract(op: PathOp, prev: PathOp | null): boolean {
+  if (!prev) return true;
+  return Boolean(op.cut) || Boolean(prev.cut) || op.depth !== prev.depth;
 }
 
 export interface ToolpathOptions {
@@ -206,6 +221,7 @@ export function buildToolpath(opts: ToolpathOptions): PathOp[] {
     const bold = el.type === 'text' && el.bold === true;
     const bit = bold ? resolveBit(profile, el.bitId) : null;
     const width = bold ? boldStrokeWidth((el as TextElement).fontSize) : 0;
+    const cut = isCutShape(el);
 
     const out: PathOp[] = [];
     let first = true;
@@ -215,7 +231,7 @@ export function buildToolpath(opts: ToolpathOptions): PathOp[] {
       const passes = bold ? fillStroke(machineStroke, width, bit!.diameter) : [machineStroke];
       for (const points of passes) {
         if (points.length < 2) continue;
-        out.push({ points, depth, comment: first ? describeElement(el) : undefined });
+        out.push({ points, depth, cut, comment: first ? describeElement(el) : undefined });
         first = false;
       }
     }
