@@ -2,7 +2,16 @@ import type { Label, ShapeElement } from '../elements/types';
 import type { MachineProfile } from '../machineProfiles/types';
 import { dialects, type GenerateResult } from './generator';
 import { grbl } from './dialects/grbl';
-import { elementDepth, elementStrokes, findOuterCutShape, isCutShape, orderElements, type PathOp } from './toolpath';
+import {
+  elementDepth,
+  elementStrokes,
+  findOuterCutShape,
+  isCutShape,
+  orderElements,
+  resolveBoldFill,
+  strokePasses,
+  type PathOp,
+} from './toolpath';
 import type { BBox, Vec2 } from '../utils/geometry';
 
 export { findOuterCutShape };
@@ -147,17 +156,21 @@ export function generatePanelGcode(opts: PanelOptions): (GenerateResult & { plan
 
   const ops: PathOp[] = [];
 
-  // 1. All engraving, cell by cell.
+  // 1. All engraving, cell by cell. Bold text is thickened with the same fill
+  //    passes the single-label generator uses, so weight survives panelisation.
   cells.forEach((cell, ci) => {
     for (const el of engraveEls) {
       const depth = elementDepth(el, profile);
-      elementStrokes(el).forEach((stroke, i) => {
+      const bold = resolveBoldFill(el, profile);
+      let first = true;
+      elementStrokes(el).forEach((stroke) => {
         if (stroke.length < 2) return;
-        ops.push({
-          points: stroke.map((p) => toMachine(p, cell)),
-          depth,
-          comment: i === 0 ? `cell ${ci + 1}: engrave` : undefined,
-        });
+        const machineStroke = stroke.map((p) => toMachine(p, cell));
+        for (const points of strokePasses(machineStroke, bold)) {
+          if (points.length < 2) continue;
+          ops.push({ points, depth, comment: first ? `cell ${ci + 1}: engrave` : undefined });
+          first = false;
+        }
       });
     }
   });

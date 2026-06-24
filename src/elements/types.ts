@@ -24,6 +24,12 @@ export interface TextElement extends BaseElement {
    * text stays single-pass (width comes from the bit).
    */
   bold?: boolean;
+  /**
+   * Target engraved width (mm) of a bold stroke. null/undefined = the default
+   * "just visible" bold (one fill pass either side of the centreline). Larger
+   * values lay more parallel passes for a heavier stroke. Ignored unless bold.
+   */
+  boldWidth?: number | null;
 }
 
 export interface SymbolElement extends BaseElement {

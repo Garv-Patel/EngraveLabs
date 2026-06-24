@@ -147,6 +147,16 @@ describe('generatePanelGcode', () => {
     expect(cutOps).toHaveLength(4); // one rounded outline per cell
   });
 
+  it('thickens bold text in every cell, just like a single label', () => {
+    const opts = { profile, sheetW: 200, sheetH: 100, originX: 0, originY: 0 } as const;
+    const normal = generatePanelGcode({ label: makeLabel([shape(), textEl()]), ...opts })!;
+    const boldText = { ...textEl(), bold: true } as TextElement;
+    const bold = generatePanelGcode({ label: makeLabel([shape(), boldText]), ...opts })!;
+    const engrave = (r: typeof normal) => r.ops.filter((o) => o.depth === profile.engraveDepth).length;
+    // Bold adds fill passes per cell, so the panel has strictly more engrave ops.
+    expect(engrave(bold)).toBeGreaterThan(engrave(normal));
+  });
+
   it('offsets engraving relative to the outer shape and sheet origin', () => {
     const result = generatePanelGcode({
       label: makeLabel([shape(), textEl()]),
