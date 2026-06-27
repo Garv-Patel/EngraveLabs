@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   buildToolpath,
+  chainStrokes,
   optimizeTravel,
   orderElements,
   elementStrokes,
@@ -120,6 +121,56 @@ describe('optimizeTravel', () => {
   });
 });
 
+describe('chainStrokes', () => {
+  const totalLen = (chains: Vec2[][]) =>
+    chains.reduce(
+      (sum, c) => sum + c.slice(1).reduce((s, p, i) => s + distance(c[i], p), 0),
+      0,
+    );
+
+  it('welds a "W" (four diagonals sharing three corners) into one continuous path', () => {
+    // Vertices: (0,0)-(1,1), (2,0)-(1,1), (2,0)-(3,1), (4,0)-(3,1).
+    const strokes: Vec2[][] = [
+      [{ x: 0, y: 0 }, { x: 1, y: 1 }],
+      [{ x: 2, y: 0 }, { x: 1, y: 1 }],
+      [{ x: 2, y: 0 }, { x: 3, y: 1 }],
+      [{ x: 4, y: 0 }, { x: 3, y: 1 }],
+    ];
+    const chains = chainStrokes(strokes);
+    expect(chains).toHaveLength(1);
+    // The single chain zig-zags through every vertex once, end to end.
+    expect(chains[0]).toEqual([
+      { x: 0, y: 0 },
+      { x: 1, y: 1 },
+      { x: 2, y: 0 },
+      { x: 3, y: 1 },
+      { x: 4, y: 0 },
+    ]);
+    // Reordering/reversing never changes how much line gets engraved.
+    expect(totalLen(chains)).toBeCloseTo(totalLen(strokes));
+  });
+
+  it('leaves genuinely disjoint strokes as separate paths', () => {
+    const strokes: Vec2[][] = [
+      [{ x: 0, y: 0 }, { x: 1, y: 0 }],
+      [{ x: 5, y: 5 }, { x: 6, y: 5 }],
+    ];
+    expect(chainStrokes(strokes)).toHaveLength(2);
+  });
+
+  it('only consumes two strokes per shared vertex, leaving the rest to seed chains', () => {
+    // Four strokes meet at the origin (a "+"): one continuous path covers two of
+    // the arms; the other two cannot be reached without lifting, so two chains.
+    const strokes: Vec2[][] = [
+      [{ x: -1, y: 0 }, { x: 0, y: 0 }],
+      [{ x: 0, y: 0 }, { x: 1, y: 0 }],
+      [{ x: 0, y: -1 }, { x: 0, y: 0 }],
+      [{ x: 0, y: 0 }, { x: 0, y: 1 }],
+    ];
+    expect(chainStrokes(strokes)).toHaveLength(2);
+  });
+});
+
 describe('buildToolpath travel', () => {
   it('cuts rapid travel versus naive renderer order for real text', () => {
     // Two text blocks far apart plus an outline: plenty of travel to shave.
@@ -144,8 +195,18 @@ describe('buildToolpath travel', () => {
     const optimized = buildToolpath({ label, profile, originX: 0, originY: 0 });
     const start = { x: 0, y: 0 };
     expect(rapidTravel(optimized, start)).toBeLessThan(rapidTravel(naiveOps, start));
-    // Same amount of engraving — only the travel between strokes changed.
-    expect(optimized).toHaveLength(naiveOps.length);
+
+    // Welding shared endpoints means fewer, longer ops than raw strokes...
+    expect(optimized.length).toBeLessThan(naiveOps.length);
+    // ...but the engraved geometry is identical: the same total cut length, just
+    // chained into continuous paths instead of disjoint strokes.
+    const cutLength = (ops: PathOp[]) =>
+      ops.reduce(
+        (sum, o) =>
+          sum + o.points.slice(1).reduce((s, p, i) => s + distance(o.points[i], p), 0),
+        0,
+      );
+    expect(cutLength(optimized)).toBeCloseTo(cutLength(naiveOps));
   });
 
   it('keeps the cut outline last and area-ordered after optimisation', () => {
