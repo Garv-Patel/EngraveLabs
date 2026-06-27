@@ -156,6 +156,66 @@ export function orderElements(elements: Element[]): Element[] {
   return [...texts, ...symbols, ...engraveShapes, ...cutShapes];
 }
 
+/**
+ * Stitch polylines that meet end-to-end into longer continuous paths.
+ *
+ * Glyphs are stored as separate strokes even where they join at a vertex: a
+ * Hershey "W" is four diagonals sharing three corners, yet it can be engraved in
+ * one unbroken pen-down. Left as four strokes, the travel optimiser enters one at
+ * a shared corner and exits at a free tip, stranding the rest a stroke-width away
+ * and forcing a needless retract/replunge at every junction. Welding shared
+ * endpoints first turns the whole "W" into a single path — one plunge, no lifts,
+ * identical engraved geometry — which is the bulk of the engraving-time saving.
+ *
+ * Greedy chaining: seed with a stroke, then keep absorbing any unused stroke that
+ * touches either end (reversing it as needed) until none do. A vertex where three
+ * or more strokes meet only consumes two of them per chain; the rest seed their
+ * own chains, exactly as a single continuous pen could not cover them either.
+ */
+export function chainStrokes(strokes: Vec2[][], eps = CONTIGUOUS_EPS): Vec2[][] {
+  const near = (a: Vec2, b: Vec2) => distance(a, b) <= eps;
+  const used = new Array(strokes.length).fill(false);
+  const chains: Vec2[][] = [];
+
+  for (let i = 0; i < strokes.length; i++) {
+    if (used[i] || strokes[i].length < 2) continue;
+    used[i] = true;
+    const chain = strokes[i].slice();
+
+    // Grow forward from the tail, then backward from the head.
+    for (let grew = true; grew; ) {
+      grew = false;
+      const tail = chain[chain.length - 1];
+      for (let j = 0; j < strokes.length; j++) {
+        if (used[j] || strokes[j].length < 2) continue;
+        const s = strokes[j];
+        if (near(tail, s[0])) chain.push(...s.slice(1));
+        else if (near(tail, s[s.length - 1])) chain.push(...s.slice(0, -1).reverse());
+        else continue;
+        used[j] = true;
+        grew = true;
+        break;
+      }
+    }
+    for (let grew = true; grew; ) {
+      grew = false;
+      const head = chain[0];
+      for (let j = 0; j < strokes.length; j++) {
+        if (used[j] || strokes[j].length < 2) continue;
+        const s = strokes[j];
+        if (near(head, s[s.length - 1])) chain.unshift(...s.slice(0, -1));
+        else if (near(head, s[0])) chain.unshift(...s.slice(1).reverse());
+        else continue;
+        used[j] = true;
+        grew = true;
+        break;
+      }
+    }
+    chains.push(chain);
+  }
+  return chains;
+}
+
 /** A polyline is closed when its last point coincides with its first. */
 const CLOSED_EPS = 1e-6;
 function isClosedPath(points: Vec2[]): boolean {
@@ -263,12 +323,22 @@ export function buildToolpath(opts: ToolpathOptions): PathOp[] {
     const bold = resolveBoldFill(el, profile);
     const cut = isCutShape(el);
 
+    const machineStrokes = elementStrokes(el)
+      .filter((stroke) => stroke.length >= 2)
+      .map((stroke) => stroke.map((p) => partToMachine(p, part, originX, originY)));
+
+    // Weld strokes that meet end-to-end (e.g. the four diagonals of a "W") into
+    // continuous paths so each glyph engraves in a single pen-down instead of
+    // lifting at every shared corner. Bold text is left unwelded: its parallel
+    // fill passes use a clamped miter that would spike at the sharp interior
+    // corners welding introduces, so its short strokes overlap at corners instead
+    // (and bold already plunges per pass, so welding the centreline saves little).
+    const paths = bold ? machineStrokes : chainStrokes(machineStrokes);
+
     const out: PathOp[] = [];
     let first = true;
-    for (const stroke of elementStrokes(el)) {
-      if (stroke.length < 2) continue;
-      const machineStroke = stroke.map((p) => partToMachine(p, part, originX, originY));
-      for (const points of strokePasses(machineStroke, bold)) {
+    for (const stroke of paths) {
+      for (const points of strokePasses(stroke, bold)) {
         if (points.length < 2) continue;
         out.push({ points, depth, cut, comment: first ? describeElement(el) : undefined });
         first = false;
