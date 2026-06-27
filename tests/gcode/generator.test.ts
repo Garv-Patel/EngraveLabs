@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { generateGcode, validateJob } from '../../src/gcode/generator';
+import { needsRetract, type PathOp } from '../../src/gcode/toolpath';
+import { distance } from '../../src/utils/geometry';
 import type { Label, TextElement, SymbolElement, ShapeElement } from '../../src/elements/types';
 import type { MachineProfile } from '../../src/machineProfiles/types';
 import proverxl from '../../src/machineProfiles/builtin/proverxl4030v2.json';
@@ -152,23 +154,46 @@ describe('generateGcode', () => {
     expect(ops).toHaveLength(1);
   });
 
-  it('stays at depth between engraving strokes instead of retracting after each', () => {
-    // Multi-stroke text yields many same-depth engraving ops in one run.
+  it('lifts to safe Z before repositioning across a gap, never dragging at depth', () => {
+    // Multi-stroke text yields many same-depth engraving ops whose strokes do not
+    // all join end-to-end. The generator may slide at depth only between strokes
+    // that genuinely meet; every real gap must be crossed at safe Z, or the bit
+    // scores straight lines through the letters.
     const { gcode, ops } = generateGcode({
       label: makeLabel([textEl({ text: 'HELLO' })]),
       profile,
       originX: 0,
       originY: 0,
     });
-    const engraveOps = ops.length;
-    const safeZMoves = gcode.split('\n').filter((l) => l === `G0 Z${profile.safeZ}`).length;
-    // One per-op retract would mean >= engraveOps lifts; now there is just the
-    // single plunge for the run plus the final retract, far fewer than the ops.
-    expect(engraveOps).toBeGreaterThan(2);
-    expect(safeZMoves).toBeLessThan(engraveOps);
-    // The header/plunge G0 Z appears once and there is exactly one final retract.
+    expect(ops.length).toBeGreaterThan(2);
+
+    let retracts = 0;
+    for (let i = 0; i < ops.length; i++) {
+      const prev = i === 0 ? null : ops[i - 1];
+      if (needsRetract(ops[i], prev)) {
+        retracts++;
+      } else {
+        // Any op that slides instead of retracting must begin exactly where the
+        // previous one ended — no gap to drag across.
+        const prevEnd = prev!.points[prev!.points.length - 1];
+        expect(distance(prevEnd, ops[i].points[0])).toBeLessThanOrEqual(1e-3);
+      }
+    }
+    // The disjoint letter strokes force real repositioning, so the run is many
+    // plunge/retract pairs — not the single slide-through-everything pass before.
+    expect(retracts).toBeGreaterThan(1);
     const plunges = gcode.split('\n').filter((l) => l.startsWith('G1 Z-')).length;
-    expect(plunges).toBe(1);
+    expect(plunges).toBe(retracts);
+  });
+
+  it('only slides at depth between strokes that actually join end-to-end', () => {
+    // needsRetract drives both the generator and the estimator: contiguous strokes
+    // (one ending where the next begins) may slide; any gap forces a retract.
+    const a: PathOp = { points: [{ x: 0, y: 0 }, { x: 10, y: 0 }], depth: 0.3 };
+    const joined: PathOp = { points: [{ x: 10, y: 0 }, { x: 10, y: 10 }], depth: 0.3 };
+    const apart: PathOp = { points: [{ x: 50, y: 50 }, { x: 60, y: 50 }], depth: 0.3 };
+    expect(needsRetract(joined, a)).toBe(false); // shares the (10,0) vertex → slide
+    expect(needsRetract(apart, a)).toBe(true); // 50 mm gap → lift and reposition
   });
 
   it('still lifts to safe Z before a through-cut so it never drags across stock', () => {

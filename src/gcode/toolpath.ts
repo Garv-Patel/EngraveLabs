@@ -18,16 +18,30 @@ export interface PathOp {
 }
 
 /**
+ * Two engraving strokes that meet within this distance (mm) are treated as a
+ * single continuous path: the tool can slide from one to the next at depth
+ * because there is no gap to drag across. Anything wider is a reposition.
+ */
+const CONTIGUOUS_EPS = 1e-3;
+
+/**
  * Whether the tool must lift clear to safe Z before machining `op`, given the
  * op machined just before it (null when `op` is the first). Unlike a laser, this
- * CNC keeps the spindle running and slides straight from one engraving stroke to
- * the next at depth — no retract needed. It only lifts when repositioning would
- * otherwise drag through stock unsafely: a through-cut, a move to or from one, or
- * a change in depth that needs the tool re-plunged.
+ * CNC keeps the spindle running, so where one stroke ends exactly where the next
+ * begins it slides straight through at depth — no retract needed.
+ *
+ * It must lift, though, whenever repositioning would otherwise drag the bit
+ * through stock: a through-cut, a move to or from one, a depth change that needs
+ * re-plunging, or — the common case — a gap between strokes. Successive letters
+ * (and the disjoint strokes within a single glyph) start nowhere near where the
+ * previous stroke ended, so sliding at depth would score a straight line across
+ * the gap, cutting through whatever lies between. Lift and reposition instead.
  */
 export function needsRetract(op: PathOp, prev: PathOp | null): boolean {
   if (!prev) return true;
-  return Boolean(op.cut) || Boolean(prev.cut) || op.depth !== prev.depth;
+  if (op.cut || prev.cut || op.depth !== prev.depth) return true;
+  const prevEnd = prev.points[prev.points.length - 1];
+  return distance(prevEnd, op.points[0]) > CONTIGUOUS_EPS;
 }
 
 export interface ToolpathOptions {

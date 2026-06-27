@@ -157,7 +157,7 @@ describe('generatePanelGcode', () => {
     expect(engrave(bold)).toBeGreaterThan(engrave(normal));
   });
 
-  it('slides between engraving strokes and only retracts for cuts, like a single label', () => {
+  it('lifts between disjoint engraving strokes and for every cut, like a single label', () => {
     const result = generatePanelGcode({
       label: makeLabel([shape(), textEl()]),
       profile,
@@ -169,12 +169,15 @@ describe('generatePanelGcode', () => {
     const lines = result.gcode.split('\n');
     const safeZ = lines.filter((l) => l === `G0 Z${profile.safeZ}`).length;
     const cutPlunges = lines.filter((l) => l.startsWith(`G1 Z-${profile.materialThickness} `)).length;
+    const allPlunges = lines.filter((l) => l.startsWith('G1 Z-')).length;
     // 2×2 shared grid → 3 + 3 = 6 guillotine cuts, each retracts and replunges.
     expect(cutPlunges).toBe(6);
-    // Far fewer retracts than ops: engraving no longer lifts after every stroke.
-    expect(safeZ).toBeLessThan(result.ops.length);
-    // Engraving across all cells shares a single plunge run (1), plus 6 cut plunges.
-    expect(lines.filter((l) => l.startsWith('G1 Z-')).length).toBe(1 + 6);
+    // The text strokes don't join end-to-end, so each is entered with its own
+    // plunge rather than slid through at depth: more than just the 6 cut plunges.
+    const engravePlunges = allPlunges - cutPlunges;
+    expect(engravePlunges).toBeGreaterThan(1);
+    // Every plunge is paired with a retract; the tool never drags across a gap.
+    expect(safeZ).toBeGreaterThanOrEqual(allPlunges);
   });
 
   it('offsets engraving relative to the outer shape and sheet origin', () => {
