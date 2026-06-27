@@ -3,13 +3,13 @@ import type { MachineProfile } from '../machineProfiles/types';
 import { assembleProgram, dialects, fmt, type GenerateResult, type ProgramContext } from './generator';
 import { grbl } from './dialects/grbl';
 import {
+  buildEngraveOps,
+  describeElement,
   elementDepth,
-  elementStrokes,
+  elementPasses,
   findOuterCutShape,
   isCutShape,
   orderElements,
-  resolveBoldFill,
-  strokePasses,
   type PathOp,
 } from './toolpath';
 import type { BBox, Vec2 } from '../utils/geometry';
@@ -146,46 +146,38 @@ export function generatePanelGcode(opts: PanelOptions): (GenerateResult & { plan
   });
 
   const ordered = orderElements(label.elements);
-  const engraveEls = ordered.filter((el) => !isCutShape(el));
   const cutEls = ordered.filter(isCutShape);
 
   const ops: PathOp[] = [];
 
-  // 1. All engraving, cell by cell. Bold text is thickened with the same fill
-  //    passes the single-label generator uses, so weight survives panelisation.
+  // 1. All engraving, cell by cell, through the SAME engraving builder the
+  //    single-label generator uses — so a letter (welded strokes, bold fill,
+  //    travel order) machines identically however many tiles it is repeated on.
+  //    The tool position chains from one cell to the next to minimise travel.
+  let cur: Vec2 = { x: originX, y: originY };
   cells.forEach((cell, ci) => {
-    for (const el of engraveEls) {
-      const depth = elementDepth(el, profile);
-      const bold = resolveBoldFill(el, profile);
-      let first = true;
-      elementStrokes(el).forEach((stroke) => {
-        if (stroke.length < 2) return;
-        const machineStroke = stroke.map((p) => toMachine(p, cell));
-        for (const points of strokePasses(machineStroke, bold)) {
-          if (points.length < 2) continue;
-          ops.push({ points, depth, comment: first ? `cell ${ci + 1}: engrave` : undefined });
-          first = false;
-        }
-      });
-    }
+    const engrave = buildEngraveOps(
+      label.elements,
+      profile,
+      (p) => toMachine(p, cell),
+      cur,
+      (el) => `cell ${ci + 1}: ${describeElement(el)}`,
+    );
+    ops.push(...engrave.ops);
+    cur = engrave.end;
   });
 
-  // 2. All cuts, after every cell is engraved.
+  // 2. All cuts, after every cell is engraved. Cuts are where the two jobs
+  //    legitimately differ: a single label cuts its own outline, a panel frames
+  //    the whole sheet — shared guillotine lines for a grid, or per-cell outlines
+  //    otherwise. The cut geometry itself still flows through the shared
+  //    elementPasses so depth and retract handling stay consistent.
   if (plan.strategy === 'grid-shared') {
     // Inner cut shapes (everything but the shared outline) still cut per cell.
     const innerCuts = cutEls.filter((el) => el.id !== outerShape.id);
     cells.forEach((cell, ci) => {
       for (const el of innerCuts) {
-        const depth = elementDepth(el, profile);
-        elementStrokes(el).forEach((stroke, i) => {
-          if (stroke.length < 2) return;
-          ops.push({
-            points: stroke.map((p) => toMachine(p, cell)),
-            depth,
-            cut: true,
-            comment: i === 0 ? `cell ${ci + 1}: inner cut` : undefined,
-          });
-        });
+        ops.push(...elementPasses(el, profile, (p) => toMachine(p, cell), `cell ${ci + 1}: inner cut`));
       }
     });
     // Shared guillotine grid: one line per shared edge.
@@ -217,16 +209,7 @@ export function generatePanelGcode(opts: PanelOptions): (GenerateResult & { plan
   } else {
     cells.forEach((cell, ci) => {
       for (const el of cutEls) {
-        const depth = elementDepth(el, profile);
-        elementStrokes(el).forEach((stroke, i) => {
-          if (stroke.length < 2) return;
-          ops.push({
-            points: stroke.map((p) => toMachine(p, cell)),
-            depth,
-            cut: true,
-            comment: i === 0 ? `cell ${ci + 1}: cut ${el.shapeKind}` : undefined,
-          });
-        });
+        ops.push(...elementPasses(el, profile, (p) => toMachine(p, cell), `cell ${ci + 1}: ${describeElement(el)}`));
       }
     });
   }
