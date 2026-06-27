@@ -129,7 +129,7 @@ export function elementStrokes(el: Element): Polyline[] {
   }
 }
 
-function describeElement(el: Element): string {
+export function describeElement(el: Element): string {
   switch (el.type) {
     case 'text':
       return `text "${el.text.split('\n')[0].slice(0, 30)}"`;
@@ -304,72 +304,120 @@ function orientInOrder(ops: PathOp[], start: Vec2): { ops: PathOp[]; end: Vec2 }
   return { ops: result, end: cur };
 }
 
+/** Maps a label-space point into machine space. The single-label and panelised
+ * generators differ only in this transform (and in how cuts are framed), so the
+ * engraving they emit is produced by exactly the same code. */
+export type ToMachine = (p: Vec2) => Vec2;
+
+/** Labels the first op of an element; the rest of its ops are left uncommented. */
+export type Describe = (el: Element) => string | undefined;
+
 /**
- * Build the full job toolpath. Machining phases keep their engraving-first
- * order (text → symbols → engrave shapes → cuts), but within each phase the
- * paths are reordered and oriented to minimise rapid travel, and successive
- * phases chain from where the previous one finished. Cut shapes keep their
- * area-sorted order for correctness and are only re-oriented, never reordered.
+ * The machining passes for one element, mapped into machine space by `toMachine`.
+ * This is the single shared core of all G-code output — letters machine
+ * identically however they are placed — so both generators call it rather than
+ * re-deriving stroke→toolpath logic:
+ *
+ *  - glyph strokes are welded end-to-end into continuous paths (chainStrokes) so
+ *    a "W" engraves in one pen-down instead of lifting at every shared corner;
+ *  - bold text is left unwelded and thickened with parallel fill passes, whose
+ *    clamped miter would otherwise spike at the corners welding introduces;
+ *  - through-cuts are flagged so the program builder lifts clear to reposition.
  */
-export function buildToolpath(opts: ToolpathOptions): PathOp[] {
-  const { label, profile, originX, originY } = opts;
-  const part = partBBox(label);
-  const ordered = orderElements(label.elements);
+export function elementPasses(
+  el: Element,
+  profile: MachineProfile,
+  toMachine: ToMachine,
+  comment?: string,
+): PathOp[] {
+  const depth = elementDepth(el, profile);
+  const bold = resolveBoldFill(el, profile);
+  const cut = isCutShape(el);
 
-  const opsFor = (el: Element): PathOp[] => {
-    const depth = elementDepth(el, profile);
-    // Bold text is thickened with a fill pattern: the centreline plus parallel
-    // passes that widen the stroke using the element's own bit — no tool change.
-    const bold = resolveBoldFill(el, profile);
-    const cut = isCutShape(el);
+  const machineStrokes = elementStrokes(el)
+    .filter((stroke) => stroke.length >= 2)
+    .map((stroke) => stroke.map(toMachine));
+  const paths = bold ? machineStrokes : chainStrokes(machineStrokes);
 
-    const machineStrokes = elementStrokes(el)
-      .filter((stroke) => stroke.length >= 2)
-      .map((stroke) => stroke.map((p) => partToMachine(p, part, originX, originY)));
-
-    // Weld strokes that meet end-to-end (e.g. the four diagonals of a "W") into
-    // continuous paths so each glyph engraves in a single pen-down instead of
-    // lifting at every shared corner. Bold text is left unwelded: its parallel
-    // fill passes use a clamped miter that would spike at the sharp interior
-    // corners welding introduces, so its short strokes overlap at corners instead
-    // (and bold already plunges per pass, so welding the centreline saves little).
-    const paths = bold ? machineStrokes : chainStrokes(machineStrokes);
-
-    const out: PathOp[] = [];
-    let first = true;
-    for (const stroke of paths) {
-      for (const points of strokePasses(stroke, bold)) {
-        if (points.length < 2) continue;
-        out.push({ points, depth, cut, comment: first ? describeElement(el) : undefined });
-        first = false;
-      }
+  const out: PathOp[] = [];
+  let first = true;
+  for (const stroke of paths) {
+    for (const points of strokePasses(stroke, bold)) {
+      if (points.length < 2) continue;
+      out.push({ points, depth, cut, comment: first ? comment : undefined });
+      first = false;
     }
-    return out;
-  };
+  }
+  return out;
+}
 
+/**
+ * Engraving (non-cut) ops for a set of elements, mapped through `toMachine` and
+ * starting from tool position `start`. Phases keep their engraving-first order
+ * (text → symbols → engrave shapes); within each phase paths are reordered and
+ * oriented to minimise rapid travel, chaining on from where the last finished.
+ * Returns the ops and the final tool position so callers (e.g. the paneliser,
+ * cell by cell) can continue the chain.
+ */
+export function buildEngraveOps(
+  elements: Element[],
+  profile: MachineProfile,
+  toMachine: ToMachine,
+  start: Vec2,
+  describe: Describe = describeElement,
+): { ops: PathOp[]; end: Vec2 } {
+  const ordered = orderElements(elements);
   const collect = (predicate: (el: Element) => boolean): PathOp[] =>
-    ordered.filter(predicate).flatMap(opsFor);
+    ordered.filter(predicate).flatMap((el) => elementPasses(el, profile, toMachine, describe(el)));
 
-  // Engraving phases may be freely reordered for travel; the cut phase keeps its
-  // area order so inner cutouts release before the part outline.
-  const engravePhases = [
+  const phases = [
     collect((e) => e.type === 'text'),
     collect((e) => e.type === 'symbol'),
     collect((e) => e.type === 'shape' && e.mode === 'engrave'),
   ];
-  const cutOps = ordered.filter(isCutShape).flatMap(opsFor);
 
   const ops: PathOp[] = [];
-  let cur: Vec2 = { x: originX, y: originY };
-  for (const phase of engravePhases) {
+  let cur = start;
+  for (const phase of phases) {
     if (phase.length === 0) continue;
     const optimized = optimizeTravel(phase, cur);
     ops.push(...optimized.ops);
     cur = optimized.end;
   }
-  if (cutOps.length > 0) {
-    const oriented = orientInOrder(cutOps, cur);
-    ops.push(...oriented.ops);
-  }
-  return ops;
+  return { ops, end: cur };
+}
+
+/**
+ * Through-cut ops for a set of elements, mapped through `toMachine`. Cut shapes
+ * keep their area-sorted order (inner cutouts release before the outermost
+ * outline) and are only re-oriented for entry, never reordered.
+ */
+export function buildCutOps(
+  elements: Element[],
+  profile: MachineProfile,
+  toMachine: ToMachine,
+  start: Vec2,
+  describe: Describe = describeElement,
+): { ops: PathOp[]; end: Vec2 } {
+  const cutOps = orderElements(elements)
+    .filter(isCutShape)
+    .flatMap((el) => elementPasses(el, profile, toMachine, describe(el)));
+  if (cutOps.length === 0) return { ops: [], end: start };
+  return orientInOrder(cutOps, start);
+}
+
+/**
+ * Build the full single-label toolpath: all engraving first, then the cuts,
+ * mapped onto the bed by the part outline and origin. A panelised job composes
+ * the same {@link buildEngraveOps} per cell and supplies its own cut framing.
+ */
+export function buildToolpath(opts: ToolpathOptions): PathOp[] {
+  const { label, profile, originX, originY } = opts;
+  const part = partBBox(label);
+  const toMachine: ToMachine = (p) => partToMachine(p, part, originX, originY);
+  const start: Vec2 = { x: originX, y: originY };
+
+  const engrave = buildEngraveOps(label.elements, profile, toMachine, start);
+  const cut = buildCutOps(label.elements, profile, toMachine, engrave.end);
+  return [...engrave.ops, ...cut.ops];
 }

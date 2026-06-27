@@ -40,6 +40,25 @@
   color: var(--text);
 }
 
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 8px;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.toggle input {
+  cursor: pointer;
+}
+
+.toggle em {
+  color: var(--text-dim);
+  font-style: italic;
+}
+
 .error,
 .warning {
   padding: 6px 10px;

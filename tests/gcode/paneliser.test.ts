@@ -180,6 +180,25 @@ describe('generatePanelGcode', () => {
     expect(safeZ).toBeGreaterThanOrEqual(allPlunges);
   });
 
+  it('welds glyph strokes per cell with the shared engraving builder', () => {
+    // A "W" is four diagonals sharing three corners. The single-label generator
+    // welds them into one pen-down (one plunge); a panel must do the same per
+    // cell, since both run the same buildEngraveOps. Here the only engraving is
+    // the "W", so the engrave plunges should equal the cell count exactly.
+    const wText = { ...textEl(), id: 'w', text: 'W' };
+    const result = generatePanelGcode({
+      label: makeLabel([shape(), wText]),
+      profile,
+      sheetW: 200,
+      sheetH: 100,
+      originX: 0,
+      originY: 0,
+    })!;
+    const lines = result.gcode.split('\n');
+    const engravePlunges = lines.filter((l) => l.startsWith(`G1 Z-${profile.engraveDepth} `)).length;
+    expect(engravePlunges).toBe(result.plan.count); // one welded "W" per cell
+  });
+
   it('offsets engraving relative to the outer shape and sheet origin', () => {
     const result = generatePanelGcode({
       label: makeLabel([shape(), textEl()]),
